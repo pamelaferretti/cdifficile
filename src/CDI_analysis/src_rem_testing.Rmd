@@ -1,0 +1,404 @@
+---
+title: "Random mixed effect models for CDI"
+author: "Jakob Wirbel"
+date: "2021-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup
+
+## Libraries
+
+```{r load_libraries, message=FALSE}
+library("tidyverse")
+library("here")
+library("lmerTest")
+library("ggrepel")
+library("ComplexHeatmap")
+```
+
+## Data
+
+First, we load all the data:
+```{r load data, message=FALSE}
+# load data
+path_file <- "../../data/CDI/"
+meta.all <- read_csv('../../data/CDI/CDI_mergedControl_samples.csv')
+feat.all <- read.table('../../data/CDI/mOTU20_profiles_filteredCDI.csv',
+                       sep=',', stringsAsFactors = FALSE, check.names = FALSE,
+                       comment.char = '', quote = '"', header = TRUE, 
+                       row.names = 1)
+feat.rel <- prop.table(as.matrix(feat.all), 2)
+```
+
+We need to adjust a few columns in the metadata:
+```{r adjust_meta}
+meta.all <- meta.all %>% 
+  # include FMT samples as CDI-positive?
+  mutate(CDI=case_when(is.na(CDI)~'Yes', TRUE~CDI)) %>% 
+  # include sequencing depth (as measured by mOTU counts) as new column
+  left_join(enframe(colSums(feat.all), name='Samples', value='Depth'), 
+            by='Samples') %>% 
+  mutate(Depth=as.factor(
+    cut(Depth, breaks = quantile(Depth), labels=c(1,2,3,4))))
+```
+
+We also need to filter the feature table somehow. Here, we filter by prevalence
+per study:
+```{r prev_filter}
+prev.mat <- do.call(cbind, map(unique(meta.all$Study), .f = function(x){
+  # ignore studies with fewer than 10 samples
+  if ((meta.all %>% filter(Study==x) %>% nrow) < 10){
+    return(rep(NA_real_, nrow(feat.rel)))
+    }
+  return(rowMeans(feat.rel[,meta.all %>% 
+                             filter(Study==x) %>% 
+                             pull(Samples)] > 0))
+  }))
+colnames(prev.mat) <- unique(meta.all$Study)
+prev.mat <- prev.mat[,colSums(is.na(prev.mat))!=nrow(prev.mat)]
+
+# filter criterion: more than 5% prevalence in 3 or more studies
+f.idx <- which(rowSums(prev.mat > 0.05) >=3)
+feat.rel.filt <- feat.rel[names(f.idx),meta.all$Samples]
+```
+
+# Confounder analysis
+
+Similar analysis to what we did in the CRC meta-analysis:
+```{r disease_effect}
+ss.disease <- apply(feat.rel.filt, 1, FUN=function(x, label){
+  rank.x <- rank(x)/length(x)
+  ss.tot <- sum((rank.x - mean(rank.x))^2)/length(rank.x)
+  ss.o.i <- sum(vapply(unique(label), function(l){
+    sum((rank.x[label==l] - mean(rank.x[label==l]))^2)
+  }, FUN.VALUE = double(1)))/length(rank.x)
+  return(1-ss.o.i/ss.tot)
+}, label=meta.all %>% pull(CDI))
+```
+
+Now, we can prepare the result matrix:
+```{r pre_conf}
+t.mean <- apply(feat.rel.filt, 1, mean, trim=0.1)
+
+df.plot.all <- tibble(
+  species=rownames(feat.rel.filt),
+  disease=ss.disease,
+  t.mean=t.mean)
+```
+
+Finally, we can calculate the effect for different confounding factors:
+```{r calc_conf, message=FALSE}
+for (meta.var in c('Study', 'Age_group', 'Sex', 'Abx', "Depth", "Status")){
+  
+  message('# ********************************\n# ', meta.var)
+  meta.c <- meta.all %>%
+    filter(!is.na(eval(parse(text=meta.var))))
+  
+  # message('# After filtering, the distribution of variables is:\n')
+  # print(table(meta.c$CDI, meta.c %>% pull(meta.var)))
+  # print(table(meta.c$Study))
+  feat.red <- feat.rel.filt[,meta.c$Samples]
+  
+  message('# Calculating variance explained by meta-variable...')
+  ss.var <- apply(feat.red, 1, FUN=function(x, label){
+    rank.x <- rank(x)/length(x)
+    ss.tot <- sum((rank.x - mean(rank.x))^2)/length(rank.x)
+    ss.o.i <- sum(vapply(unique(label), function(l){
+      sum((rank.x[label==l] - mean(rank.x[label==l]))^2)
+    }, FUN.VALUE = double(1)))/length(rank.x)
+    return(1 - ss.o.i/ss.tot)
+  }, label=meta.c %>% pull(meta.var))
+  df.plot.all[[meta.var]] <- ss.var
+  
+  message('# Calculating association with the meta-variable...')
+  if (meta.c %>% pull(meta.var) %>% unique %>% length > 2){
+    meta.significance <- apply(feat.red, 1, FUN=function(x, var){
+      kruskal.test(x~as.factor(var))$p.value
+    }, var=meta.c %>% pull(meta.var))
+  } else {
+    meta.significance <- apply(feat.red, 1, FUN=function(x, var){
+      wilcox.test(x~as.factor(var))$p.value
+    }, var=meta.c %>% pull(meta.var))
+  }
+  meta.significance <- p.adjust(meta.significance, method='fdr')
+  df.plot.all[[paste0(meta.var, '.significance')]] <- meta.significance
+}
+
+```
+
+Finally, plot everything together:
+```{r plot_conf}
+df.plot.all %>%
+  pivot_longer(-c(species, disease,t.mean), 
+               names_to='type', values_to='meta') %>%
+  filter(!str_detect(type, '.significance')) %>%
+  filter(complete.cases(.)) %>% 
+  ggplot(aes(x=disease, y=meta, size=t.mean+1e-08)) +
+    geom_abline(slope = 1, intercept = 0, col='darkgrey', lty=3) + 
+    geom_point(shape=19, alpha=.5) +
+    xlab('Variance explained by disease status') +
+    ylab('Variance explained by metadata variable') +
+    theme_bw() +
+    facet_wrap(~type, ncol=3) +
+    theme(strip.background = element_blank(),
+          panel.grid.minor = element_blank()) +
+    scale_size_area(name='Trimmed mean\nabundance',
+                    breaks=c(1e-07, 1e-06, 1e-05)) +
+    guides( size = "legend", colour='legend')
+```
+
+The biggest effects seem to come from `Age_group` and `Study`, so we will 
+include these in the mixed effect model.
+
+# REM-testing
+
+## With Cdiff-positive samples
+
+For the mixed random effect models, we first need to adjust the metadata again:
+
+```{r adjust_meta_2}
+# testing with linear mixed model
+meta.all <- meta.all %>% 
+  mutate(Age_group=case_when(is.na(Age_group)~'NA', TRUE~Age_group)) %>%
+  mutate(Sex=case_when(is.na(Sex)~'NA', TRUE~Sex)) %>%
+  mutate(Abx=case_when(is.na(Abx)~'NA', TRUE~Abx))
+```
+
+Now, we can run a test with the following model:
+> model: feat ~ CDI | Study + Age_group
+
+
+```{r testing, message=FALSE, warning=FALSE}
+df.res <- tibble(p.val=double(0),
+                 effect.size=double(0),
+                 species=character(0))
+
+for (x in rownames(feat.rel.filt)){
+  tmp <- log10(feat.rel.filt[x,meta.all$Samples] + 1e-05)
+
+  df <- data.frame(value=tmp, CDI=meta.all$CDI, Study=meta.all$Study,
+                   Age_group=meta.all$Age_group, Abx=meta.all$Abx,
+                   Sex=meta.all$Sex)
+  res <- lmer(value~CDI + (1|Study) + (1|Age_group), 
+              data=df)
+  res2 <- summary(res)$coefficients
+  df.res <- df.res %>% 
+    add_row(p.val=res2[2,5], 
+            effect.size=res2[2,1],
+            species=x)
+}
+
+# save the results
+df.res <- df.res %>% 
+  filter(species!='-1') %>% 
+  # adjust the p-value for multiple testing
+  mutate(p.adj=p.adjust(p.val, method='fdr'))
+write_tsv(df.res, '../../data/CDI/random_effect_model_results.tsv')
+```
+
+## Without Cdiff-positive samples
+
+Do the same again, but filter out samples that have detectable levels of 
+`Cdiff`:
+```{r test_without_cdiff, message=FALSE, warning=FALSE}
+df.res.2 <- tibble(p.val=double(0),
+                   effect.size=double(0),
+                   species=character(0))
+meta.all.red <- meta.all %>% 
+  filter(Cdiff=='No')
+
+for (x in rownames(feat.rel.filt)){
+  tmp <- log10(feat.rel.filt[x,meta.all.red$Samples] + 1e-06)
+  
+  df <- data.frame(value=tmp, CDI=meta.all.red$CDI, Study=meta.all.red$Study,
+                   Age_group=meta.all.red$Age_group, Abx=meta.all.red$Abx,
+                   Sex=meta.all.red$Sex)
+  res <- lmer(value~CDI + (1|Study) + (1|Age_group), 
+              data=df)
+  res2 <- summary(res)$coefficients
+  df.res.2 <- df.res.2 %>% 
+    add_row(p.val=res2[2,5], 
+            effect.size=res2[2,1],
+            species=x)
+}
+
+# adjust for multiple testing
+df.res.2 <- df.res.2 %>% 
+  filter(species!='-1') %>% 
+  # adjust the p-value for multiple testing
+  mutate(p.adj=p.adjust(p.val, method='fdr'))
+```
+
+## Compare the results
+
+We can have a look how similar the results are with both approaches. Note that
+fewer samples means lower power, so the p-values are expected to be a 
+bit lower:
+```{r combine}
+df.plot <- df.res %>% 
+  full_join(df.res.2 %>% transmute(species, p.val.without.cdiff=p.val, 
+                                   effect.size.without.cdiff=effect.size,
+                                   p.adj.without.cdiff=p.adj),
+            by='species')
+```
+
+How similar are the effect sizes?
+
+```{r compare_effect_sizes}
+df.plot %>% 
+  ggplot(aes(x=effect.size, y=effect.size.without.cdiff)) + 
+    geom_point() +
+    geom_abline(slope = 1, intercept = 0) + 
+    geom_point(data=. %>% filter(str_detect(species, 'difficile')), 
+               col='red', size=2)
+```
+
+How similar are the p-values?
+
+```{r compare_p_vals}
+df.plot %>% 
+  ggplot(aes(x=-log10(p.val), y=-log10(p.val.without.cdiff))) + 
+    geom_point() +
+    geom_abline(slope = 1, intercept = 0) + 
+    geom_point(data=. %>% filter(str_detect(species, 'difficile')), 
+               col='red', size=2)
+```
+
+Because of the different scales, it might make sense to compute the Spearman
+correlation:
+```{r compare_p_vals_spearman}
+cor(df.plot$p.val, df.plot$p.val.without.cdiff, method='spearman')
+```
+
+
+# Volcano plot
+
+Based on these data, we can plot a nice volcano plot. First, we add some 
+annotations:
+
+```{r prep_volcano}
+df.res <- df.res %>% 
+  # add groups with information from Panela
+  mutate(highlight=case_when(str_detect(species, 'perfringens')~'CDI-similar',
+                             str_detect(species, 'innocuum')~'CDI-similar',
+                             str_detect(species, 'faecalis')~'CDI-similar',
+                             str_detect(species, 'oxytoca')~'CDI-similar',
+                             str_detect(species, 'aureus')~'CDI-similar',
+                             str_detect(species, 'amalonaticus')~'CDI-similar',
+                             str_detect(species, 'aeruginosa')~'CDI-similar',
+                             str_detect(species, 'cloacae')~'CDI-similar',
+                             str_detect(species, 'difficile')~'Cdiff',
+                             effect.size > 0.9 ~ 'enriched-relevant',
+                             effect.size > 0.1 & effect.size <= 0.9 & p.adj < 0.01 ~ 'enriched',
+                             effect.size < -0.1 & p.adj < 0.01 ~ 'depleted',
+                             TRUE~'other')) %>% 
+  mutate(label=case_when(highlight%in%c('CDI-similar', 'Cdiff', 'enriched-relevant')~
+                           str_remove(species, '\\[(ref|meta)_mOTU_v2_[0-9]{4}\\]'),
+                         TRUE~'')) %>% 
+  mutate(color_positive=p.adj < 0.01 & effect.size > 0.125) %>% 
+  mutate(highlight=factor(highlight, 
+                          levels = c('Cdiff', 'CDI-similar', 'enriched', 'enriched-relevant', 
+                                     'depleted', 'other')))
+```
+
+Then we can create the volcano plot:
+
+```{r volcano, warning=FALSE}
+g <- df.res %>% 
+  ggplot(aes(x=effect.size, y=-log10(p.adj))) + 
+    geom_hline(yintercept = 2, colour='darkgrey', lty=2) + 
+    geom_vline(xintercept = c(-0.1, 0.1), colour='darkgrey', lty=2) + 
+    geom_point(col='lightgrey') + 
+    geom_point(data=df.res %>% filter(highlight!='other'),
+               aes(col=highlight)) +
+    geom_text_repel(aes(label=label), max.overlaps = 10) + 
+    theme_bw() + 
+    theme(panel.grid.minor=element_blank()) + 
+    xlab('LME model effect size') + 
+    ylab('-log10(adj. P-value)') + 
+    scale_colour_manual(
+      values=c('#E40046', '#8246AF', '#FFA300', '#FFA300', '#307FE2', 'lightgrey'), 
+      labels=c('C. difficile', 'CDI-similar', 'CDI-enriched', 'CDI-enriched-relevant',
+               'CDI-depleted','other'), name='')
+
+ggsave(g, filename = here("../../figures/CDI/", 'cdiff_lme_volcano.pdf'),
+       width = 10, height = 8,
+       useDingbats=FALSE)
+print(g)
+```
+
+We can also have a look at the distribution of single interesting species:
+
+```{r plot_example_species}
+x <- "Clostridioides difficile [ref_mOTU_v2_0051]"
+x <- "Enterococcus avium [ref_mOTU_v2_0599]"
+x <- "Veillonella parvula [ref_mOTU_v2_1042]"
+enframe(feat.rel.filt[x,], name='Samples') %>% 
+  right_join(meta.all,
+             by='Samples') %>% 
+  mutate(value=log10(value + 1e-05)) %>% 
+  ggplot(aes(x=Study, y=value, fill=CDI)) + 
+    geom_boxplot() + 
+    theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+How would the volcano look like for the testing without `Cdiff`-positive 
+samples?
+
+```{r volcano_without_cdiff, warning=FALSE}
+g2 <- df.res.2 %>% 
+  # add groups with information from Panela
+  mutate(highlight=case_when(str_detect(species, 'perfringens')~'CDI-similar',
+                             str_detect(species, 'innocuum')~'CDI-similar',
+                             str_detect(species, 'faecalis')~'CDI-similar',
+                             str_detect(species, 'oxytoca')~'CDI-similar',
+                             str_detect(species, 'aureus')~'CDI-similar',
+                             str_detect(species, 'amalonaticus')~'CDI-similar',
+                             str_detect(species, 'aeruginosa')~'CDI-similar',
+                             str_detect(species, 'cloacae')~'CDI-similar',
+                             str_detect(species, 'difficile')~'Cdiff',
+                             effect.size > 0.9 ~ 'enriched-relevant',
+                             effect.size > 0.1 & effect.size <= 0.9 & p.adj < 0.01 ~ 'enriched',
+                             effect.size < -0.1 & p.adj < 0.01 ~ 'depleted',
+                             TRUE~'other')) %>% 
+  mutate(label=case_when(highlight%in%c('CDI-similar', 'Cdiff', 'enriched-relevant')~
+                           str_remove(species, '\\[(ref|meta)_mOTU_v2_[0-9]{4}\\]'),
+                         TRUE~'')) %>% 
+  mutate(color_positive=p.adj < 0.01 & effect.size > 0.125) %>% 
+  mutate(highlight=factor(highlight, 
+                          levels = c('Cdiff', 'CDI-similar', 'enriched', 'enriched-relevant',
+                                     'depleted', 'other'))) %>% 
+  ggplot(aes(x=effect.size, y=-log10(p.adj))) + 
+    geom_hline(yintercept = 2, colour='darkgrey', lty=2) + 
+    geom_vline(xintercept = c(-0.1, 0.1), colour='darkgrey', lty=2) + 
+    geom_point(col='lightgrey') + 
+    geom_point(data=. %>% filter(highlight!='other'),
+               aes(col=highlight)) +
+    geom_text_repel(aes(label=label)) + 
+    theme_bw() + 
+    theme(panel.grid.minor=element_blank()) + 
+    xlab('LME model effect size') + 
+    ylab('-log10(adj. P-value)') + 
+    scale_colour_manual(
+      values=c('#E40046', '#8246AF', '#FFA300', '#FFA300', '#307FE2', 'lightgrey'), 
+      labels=c('C. difficile', 'CDI-similar', 'CDI-enriched', 'CDI-enriched-relevant',
+               'CDI-depleted','other'), name='')
+
+g2
+
+ggsave(g2, filename = here("../../figures/CDI/", 'cdiff_lme_volcano_withoutCdiff.pdf'),
+       width = 10, height = 8,
+       useDingbats=FALSE)
+print(g2)
+```
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```

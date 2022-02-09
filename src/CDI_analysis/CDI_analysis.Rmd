@@ -1,0 +1,715 @@
+---
+title: "C. difficile abundance and prevalence analysis in CDI samples"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("ggdendro")
+library(dplyr)
+library("reshape2")
+library("grid")
+library("ggrepel")
+library(cowplot)
+library(RColorBrewer)
+library(gplots)
+```
+
+#Read metadata Table 
+```{r}
+metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Host_species = col_character(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character(), 
+                            diet = col_character(),
+                            final_representative = col_character(),
+                            sum_base_count = col_character(),
+                            total_MG_coverage = col_integer(),
+                            Cdiff_tox = col_factor()
+))
+
+```
+
+#filtering CDI studies 
+```{r}
+#preliminary filtering
+metadata_file2 <- metadata_file %>%
+    filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & 
+             final_representative=="Yes" & !is.na(Status) & !is.na(CDI)) %>% 
+  #selected studies to filter out
+  filter(Study != "Draper_2018_FMT_phage" & Study != "Kao_2017_FMT" & subject_disease_status != "UC") %>% 
+  group_by(Study) %>% 
+  mutate(atLeastTwoPosCDI = (sum(CDI=="Yes")>1) | (sum(subject_disease_status=="CDI")>1)) %>% 
+  filter(atLeastTwoPosCDI == TRUE)
+
+#identify CDI samples
+CDI <- metadata_file2 %>% 
+  filter((subject_disease_status == "CDI" & Status == "Diseased") | (subject_disease_status == "Diarrhea" & CDI == "Yes" & Status == "Diseased")) %>% 
+  mutate(group = "CDI")
+
+true.controls <- metadata_file2 %>% 
+  filter(subject_disease_status == "CTR" & CDI == "No" & Status == "Healthy") %>% 
+  mutate(group = "true_control")
+
+mixed.controls <- metadata_file2 %>% 
+  filter(
+    #diseased controls
+    (subject_disease_status != "CDI" & subject_disease_status != "CTR" & subject_disease_status != "Diarrhea" & CDI == "No" & Status == "Diseased") |
+    #diarrhea but no CDI
+    (subject_disease_status == "Diarrhea" & CDI == "No" & Status == "Diseased")) %>% 
+  mutate(group = "mixed_control")
+
+#Combine and save CDI and CONTROL samples
+all_merged <- rbind(CDI, true.controls, mixed.controls) 
+write.csv(all_merged, "../../data/CDI/CDI_and_splittedControl_samples.csv", row.names = FALSE)
+
+```
+
+#CDI meta-analysis composition by sample group (CDI, H-Ctr and D-ctr)
+```{r}
+#identify CDI samples
+CDI <- metadata_file2 %>% 
+  filter((subject_disease_status == "CDI" & Status == "Diseased") | (subject_disease_status == "Diarrhea" & CDI == "Yes" & Status == "Diseased")) %>% 
+  mutate(layer1 = "CDI", layer2= ifelse(Cdiff=="Yes", "CDI_CdiffPos", "CDI_CdiffNeg"))
+
+#identify healthy control samples
+true.controls <- metadata_file2 %>% 
+  filter(subject_disease_status == "CTR" & CDI == "No" & Status == "Healthy") %>% 
+  mutate(layer1 = "True.Control", layer2= ifelse(Cdiff=="Yes", "True.Control_CdiffPos", "True.Control_CdiffNeg"))
+
+#identify diseased control samples
+mixed.controls <- metadata_file2 %>% 
+  filter(
+    (subject_disease_status != "CDI" & subject_disease_status != "CTR" & subject_disease_status != "Diarrhea" & CDI == "No" & Status == "Diseased") |
+    (subject_disease_status == "Diarrhea" & CDI == "No" & Status == "Diseased")) %>% 
+  mutate(layer1 = "Mixed.Control", layer2= ifelse(Cdiff=="Yes", "Mixed.Control_CdiffPos", "Mixed.Control_CdiffNeg"))
+
+#Combine and save CDI and CONTROL samples
+all_merged <- rbind(CDI, true.controls, mixed.controls) 
+
+all_merged.counts <- all_merged %>% 
+  group_by(layer1, Cdiff) %>% 
+  summarise(count=n()) 
+
+all_merged.totals <- all_merged %>% 
+  group_by(layer1) %>% 
+  summarise(totals=n()) 
+
+all_merged.all <- left_join(all_merged.counts, all_merged.totals, by = "layer1")
+all_merged.all <- all_merged.all %>% 
+  mutate(perc= (count*100)/totals) 
+
+pdf(file="../../figures/CDI/stacked_bars_overview.pdf", width=6, height=3)
+ggplot(all_merged.all, aes(fill=Cdiff, y=perc, x=layer1)) + 
+    geom_bar(position="stack", stat="identity") +
+  theme_bw() +
+  coord_flip()
+dev.off()
+
+```
+
+#load mOTU2.0 count table
+```{r}
+count_file <- read_tsv("../../data/mOTU_counts.tsv")
+```
+
+#funtion from counts to abundances
+```{r}
+transform_to_abundance <- function(column){
+  column/sum(column)
+}
+```
+
+#color palette
+```{r}
+size_text = 10 
+colors <- c("#D45500",'#2C5AA0', "#AFC6E9") #CDI, H-Ctr, D-Ctr
+```
+
+#Rel. abundance heatmap across sample group
+```{r}
+library(SIAMCAT)
+library(ComplexHeatmap)
+library(circlize)
+
+df.meta.tmp <- all_merged %>% 
+      as.data.frame()
+rownames(df.meta.tmp) <- df.meta.tmp$Samples
+    
+feat.tmp <- as.data.frame(count_file)
+rownames(feat.tmp) <- feat.tmp$...1
+feat.tmp$...1 <- NULL
+    
+feat.tmp <- feat.tmp[,df.meta.tmp$Samples]
+feat.tmp.rel <- prop.table(as.matrix(feat.tmp), 2)
+    
+sc.obj.tmp <- siamcat(feat=feat.tmp.rel, meta=df.meta.tmp)
+sc.obj.tmp <- filter.features(sc.obj.tmp, filter.method='abundance', cutoff=0.01, verbose=3)
+sc.obj.tmp <- filter.features(sc.obj.tmp, filter.method='prevalence', cutoff=0.1, feature.type = 'filtered', verbose=3)
+
+#get filtered matrix
+df.tmp <- data.frame(t(get.filt_feat.matrix(sc.obj.tmp)))
+
+col_fun = colorRamp2(c(0, 0.0001, 0.001, 0.01, 0.1, 1), c("black", "blue", "darkred", "orange", "yellow", "white"))
+col_fun(seq(0, 100))
+
+a <- all_merged %>% 
+  select(Study) %>% 
+  unique()
+
+group.cols <- colors
+study.cols <- c("#F48FB1","navy","#7986CB","#4FC3F7","#00897B","#9CCC65","goldenrod1","#B71C1C", "#795548", "black", "yellow", "white")
+df.heatmap<- data.frame(group = all_merged$group, study = all_merged$Study)
+
+group.cols.assigned<- setNames(group.cols, unique(as.character(all_merged$group)))
+study.cols.assigned <- setNames(study.cols, unique(as.character(all_merged$Study)))
+
+ha.heatmap = rowAnnotation(df=df.heatmap,
+                           col = list(group = group.cols.assigned,
+                                      study = study.cols.assigned))
+
+pdf(file="../../figures/CDI/CDI_heatmap.pdf", width=25, height=15)
+
+Heatmap(df.tmp, 
+        col = col_fun, 
+        right_annotation = ha.heatmap,
+        name = "relative abundance", 
+        show_row_names = TRUE, 
+        show_column_names = TRUE, 
+        row_dend_reorder = TRUE, 
+        column_dend_reorder = TRUE, 
+        clustering_distance_columns = "euclidean",
+        column_names_gp = grid::gpar(fontsize = 4),
+        row_names_gp = grid::gpar(fontsize = 4),
+        column_dend_height = unit(1, "cm"), 
+    row_dend_width = unit(4, "cm"))
+
+dev.off()
+```
+
+#transform counts into abundance table
+```{r}
+abundances <- count_file %>% 
+  mutate_at(vars(-...1), transform_to_abundance)
+```
+
+#Manipulate abundance table
+```{r}
+ samples_target <- all_merged %>% 
+  pull(Samples)
+
+abundances_filtered_cdiff <- abundances %>% 
+  select(...1, all_of(samples_target)) %>% 
+  #first column is named "X" automatically at loading
+  # identify cdiff mOTU clusters
+  filter(str_detect(...1, "difficile")) %>%
+  # set sample id as rownames
+  column_to_rownames("...1")
+
+abundances_filtered_cdiff_t<-as.data.frame(t(abundances_filtered_cdiff))
+
+joined_table_abundances <- left_join(CDI, abundances_filtered_cdiff_t %>%
+            mutate(Samples = rownames(abundances_filtered_cdiff_t)),by = 'Samples') 
+
+joined_table_abundances <- joined_table_abundances %>% 
+  rename(Clostridioides_difficile_ref_mOTU_v2_0051 = "Clostridioides difficile [ref_mOTU_v2_0051]")
+```
+
+#extract CDI-like symptomps associated species info
+```{r}
+all_merged_samples <- all_merged %>% 
+  pull(Samples)
+
+#enteropathogenic species list
+tmp1 <- abundances %>% 
+  select(...1, all_of(all_merged_samples)) %>% 
+  filter(str_detect(...1, "Clostridium perfringens") | #ref_mOTU_v2_1117*
+           str_detect(...1, "Clostridium innocuum") | #ref_mOTU_v2_0643*
+           str_detect(...1, "ref_mOTU_v2_0116") | #Enterococcus faecalis*
+           str_detect(...1, "Klebsiella michiganensis/oxytoca") | #ref_mOTU_v2_0079
+           str_detect(...1, "ref_mOTU_v2_0051") | #cdiff*
+           str_detect(...1, "ref_mOTU_v2_0067") | #Staphylococcus aureus
+           str_detect(...1, "[ref_mOTU_v2_0192]") | #Enterobacter cloacae 
+           str_detect(...1, "[ref_mOTU_v2_0266]") | #Enterobacter cloacae 
+           str_detect(...1, "[ref_mOTU_v2_0268]") | #Enterobacter cloacae 
+           str_detect(...1, "[ref_mOTU_v2_0269]") | #Enterobacter cloacae 
+           str_detect(...1, "[ref_mOTU_v2_3252]") | #Enterobacter cloacae 
+           str_detect(...1, "[ref_mOTU_v2_0373]") | #Enterobacter cloacae 
+           str_detect(...1, "[ref_mOTU_v2_0096]")  #Pseudomonas aeruginosa/otitidis 
+           ) %>%
+  column_to_rownames("...1")
+
+tmp1_t<-as.data.frame(t(tmp1))
+
+all_merged_samples <- all_merged %>% 
+  select(Samples, group) 
+
+#improve readability of column names
+tmp_joined <- left_join(all_merged_samples, tmp1_t %>%
+              mutate(Samples = rownames(tmp1_t)),by = 'Samples') %>% 
+              rename(Clostridioides_difficile_ref_mOTU_v2_0051 = "Clostridioides difficile [ref_mOTU_v2_0051]", 
+                     Citrobacter_amalonaticus_ref_mOTU_v2_0042 ="Citrobacter amalonaticus [ref_mOTU_v2_0042]", 
+                     Klebsiella_oxytoca_ref_mOTU_v2_0079 ="Klebsiella michiganensis/oxytoca [ref_mOTU_v2_0079]", 
+                     Clostridium_innocuum_ref_mOTU_v2_0643 ="Clostridium innocuum [ref_mOTU_v2_0643]",
+                     Clostridium_perfringens_ref_mOTU_v2_1117 ="Clostridium perfringens [ref_mOTU_v2_1117]",
+                     Enterococcus_faecalis_ref_mOTU_v2_0116 ="Enterococcus faecalis [ref_mOTU_v2_0116]" ,
+                     Staphylococcus_aureus_ref_mOTU_v2_0067 = "Staphylococcus aureus [ref_mOTU_v2_0067]",
+                     Enterobacter_cloacae_ref_mOTU_v2_0192 = "Enterobacter cloacae [ref_mOTU_v2_0192]",
+                     Enterobacter_cloacae_ref_mOTU_v2_0266 = "Enterobacter cloacae [ref_mOTU_v2_0266]",
+                     Enterobacter_cloacae_ref_mOTU_v2_0268 = "Enterobacter cloacae [ref_mOTU_v2_0268]",
+                     Enterobacter_cloacae_ref_mOTU_v2_0269 = "Enterobacter cloacae [ref_mOTU_v2_0269]",
+                     Enterobacter_cloacae_ref_mOTU_v2_3252 = "Enterobacter cloacae [ref_mOTU_v2_3252]",
+                     Enterobacter_cloacae_ref_mOTU_v2_0373 = "Enterobacter cloacae [ref_mOTU_v2_0373]",
+                     Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096 = "Pseudomonas aeruginosa/otitidis [ref_mOTU_v2_0096]"
+                     ) %>% 
+              select(Samples, 
+                     group,
+                     Clostridioides_difficile_ref_mOTU_v2_0051, 
+                     Citrobacter_amalonaticus_ref_mOTU_v2_0042, 
+                     Clostridium_innocuum_ref_mOTU_v2_0643, 
+                     Klebsiella_oxytoca_ref_mOTU_v2_0079,
+                     Clostridium_perfringens_ref_mOTU_v2_1117, 
+                     Enterococcus_faecalis_ref_mOTU_v2_0116,
+                     Staphylococcus_aureus_ref_mOTU_v2_0067,
+                     Enterobacter_cloacae_ref_mOTU_v2_0192,
+                     Enterobacter_cloacae_ref_mOTU_v2_0266,
+                     Enterobacter_cloacae_ref_mOTU_v2_0268,
+                     Enterobacter_cloacae_ref_mOTU_v2_0269,
+                     Enterobacter_cloacae_ref_mOTU_v2_3252,
+                     Enterobacter_cloacae_ref_mOTU_v2_0373,
+                     Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096
+                     ) 
+```
+
+#sum abundances for multiple motus for each species
+```{r}
+tmp_joined.clean <- tmp_joined %>% 
+  mutate(Enterobacter_cloacae = as.double(Enterobacter_cloacae_ref_mOTU_v2_0192) + 
+           as.double(Enterobacter_cloacae_ref_mOTU_v2_0266) +
+           as.double(Enterobacter_cloacae_ref_mOTU_v2_0268) + 
+           as.double(Enterobacter_cloacae_ref_mOTU_v2_0269) +
+           as.double(Enterobacter_cloacae_ref_mOTU_v2_3252) + 
+           as.double(Enterobacter_cloacae_ref_mOTU_v2_0373)) %>%
+  select(Samples, 
+         group,
+         Clostridioides_difficile_ref_mOTU_v2_0051, 
+         Citrobacter_amalonaticus_ref_mOTU_v2_0042, 
+         Clostridium_innocuum_ref_mOTU_v2_0643, 
+         Klebsiella_oxytoca_ref_mOTU_v2_0079,
+         Clostridium_perfringens_ref_mOTU_v2_1117, 
+         Enterococcus_faecalis_ref_mOTU_v2_0116,
+         #Bacteroides_fragilis_ref_mOTU_v2_0286,
+         Staphylococcus_aureus_ref_mOTU_v2_0067,
+         Enterobacter_cloacae,
+         Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096) 
+```
+
+
+#calculate prevalences of CDI-like symptoms species
+```{r}
+tmp_joined_ctr.true <- tmp_joined.clean %>%
+  filter(group=="true_control") %>%
+  group_by(Samples) %>%
+  dplyr::summarise_all(~sum(. != 0))
+
+Clostridioides_difficile_ref_mOTU_v2_0051_ctr.true <- (sum(tmp_joined_ctr.true$Clostridioides_difficile_ref_mOTU_v2_0051)*100)/nrow(tmp_joined_ctr.true)
+Citrobacter_amalonaticus_ref_mOTU_v2_0042_ctr.true <- (sum(tmp_joined_ctr.true$Citrobacter_amalonaticus_ref_mOTU_v2_0042)*100)/nrow(tmp_joined_ctr.true)
+Clostridium_innocuum_ref_mOTU_v2_0643_ctr.true <- (sum(tmp_joined_ctr.true$Clostridium_innocuum_ref_mOTU_v2_0643)*100)/nrow(tmp_joined_ctr.true)
+Clostridium_perfringens_ref_mOTU_v2_1117_ctr.true <- (sum(tmp_joined_ctr.true$Clostridium_perfringens_ref_mOTU_v2_1117)*100)/nrow(tmp_joined_ctr.true)
+Enterococcus_faecalis_ref_mOTU_v2_0116_ctr.true <- (sum(tmp_joined_ctr.true$Enterococcus_faecalis_ref_mOTU_v2_0116)*100)/nrow(tmp_joined_ctr.true)
+Klebsiella_oxytoca_ref_mOTU_v2_0079_ctr.true <- (sum(tmp_joined_ctr.true$Klebsiella_oxytoca_ref_mOTU_v2_0079)*100)/nrow(tmp_joined_ctr.true)
+Staphylococcus_aureus_ref_mOTU_v2_0067_ctr.true <- (sum(tmp_joined_ctr.true$Staphylococcus_aureus_ref_mOTU_v2_0067)*100)/nrow(tmp_joined_ctr.true)
+Enterobacter_cloacae_ctr.true <- (sum(tmp_joined_ctr.true$Enterobacter_cloacae)*100)/nrow(tmp_joined_ctr.true)
+Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096_ctr.true <- (sum(tmp_joined_ctr.true$Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096)*100)/nrow(tmp_joined_ctr.true)
+             
+tmp_joined_ctr.mixed <- tmp_joined.clean %>%
+  filter(group=="mixed_control") %>%
+  group_by(Samples) %>%
+  dplyr::summarise_all(~sum(. != 0))
+
+Clostridioides_difficile_ref_mOTU_v2_0051_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Clostridioides_difficile_ref_mOTU_v2_0051)*100)/nrow(tmp_joined_ctr.mixed)
+Citrobacter_amalonaticus_ref_mOTU_v2_0042_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Citrobacter_amalonaticus_ref_mOTU_v2_0042)*100)/nrow(tmp_joined_ctr.mixed)
+Clostridium_innocuum_ref_mOTU_v2_0643_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Clostridium_innocuum_ref_mOTU_v2_0643)*100)/nrow(tmp_joined_ctr.mixed)
+Clostridium_perfringens_ref_mOTU_v2_1117_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Clostridium_perfringens_ref_mOTU_v2_1117)*100)/nrow(tmp_joined_ctr.mixed)
+Enterococcus_faecalis_ref_mOTU_v2_0116_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Enterococcus_faecalis_ref_mOTU_v2_0116)*100)/nrow(tmp_joined_ctr.mixed)
+Klebsiella_oxytoca_ref_mOTU_v2_0079_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Klebsiella_oxytoca_ref_mOTU_v2_0079)*100)/nrow(tmp_joined_ctr.mixed)
+Staphylococcus_aureus_ref_mOTU_v2_0067_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Staphylococcus_aureus_ref_mOTU_v2_0067)*100)/nrow(tmp_joined_ctr.mixed)
+Enterobacter_cloacae_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Enterobacter_cloacae)*100)/nrow(tmp_joined_ctr.mixed)
+Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096_ctr.mixed <- (sum(tmp_joined_ctr.mixed$Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096)*100)/nrow(tmp_joined_ctr.mixed)
+
+tmp_joined_cdi <- tmp_joined.clean %>% 
+  filter(group == "CDI") %>% 
+  group_by(Samples) %>% 
+  summarise_all(~sum(. != 0)) 
+
+Clostridioides_difficile_ref_mOTU_v2_0051_cdi <- (sum(tmp_joined_cdi$Clostridioides_difficile_ref_mOTU_v2_0051)*100)/nrow(tmp_joined_cdi)
+Citrobacter_amalonaticus_ref_mOTU_v2_0042_cdi <- (sum(tmp_joined_cdi$Citrobacter_amalonaticus_ref_mOTU_v2_0042)*100)/nrow(tmp_joined_cdi)
+Clostridium_innocuum_ref_mOTU_v2_0643_cdi <- (sum(tmp_joined_cdi$Clostridium_innocuum_ref_mOTU_v2_0643)*100)/nrow(tmp_joined_cdi)
+Clostridium_perfringens_ref_mOTU_v2_1117_cdi <- (sum(tmp_joined_cdi$Clostridium_perfringens_ref_mOTU_v2_1117)*100)/nrow(tmp_joined_cdi)
+Enterococcus_faecalis_ref_mOTU_v2_0116_cdi <- (sum(tmp_joined_cdi$Enterococcus_faecalis_ref_mOTU_v2_0116)*100)/nrow(tmp_joined_cdi)
+Klebsiella_oxytoca_ref_mOTU_v2_0079_cdi <- (sum(tmp_joined_cdi$Klebsiella_oxytoca_ref_mOTU_v2_0079)*100)/nrow(tmp_joined_cdi)
+Staphylococcus_aureus_ref_mOTU_v2_0067_cdi <- (sum(tmp_joined_cdi$Staphylococcus_aureus_ref_mOTU_v2_0067)*100)/nrow(tmp_joined_cdi)
+Enterobacter_cloacae_cdi <- (sum(tmp_joined_cdi$Enterobacter_cloacae)*100)/nrow(tmp_joined_cdi)
+Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096_cdi <- (sum(tmp_joined_cdi$Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096)*100)/nrow(tmp_joined_cdi)
+
+```
+
+#plot prevalences of CDI-like symptoms (AAD) species
+```{r}
+
+species <- c('Clostridioides difficile', 'Clostridioides difficile','Clostridioides difficile',
+             'Citrobacter amalonaticus', 'Citrobacter amalonaticus','Citrobacter amalonaticus', 
+             'Clostridium perfringens', 'Clostridium perfringens', 'Clostridium perfringens', 
+             'Clostridium innocuum', 'Clostridium innocuum', 'Clostridium innocuum', 
+             'Enterococcus faecalis', 'Enterococcus faecalis', 'Enterococcus faecalis', 
+             'Klebsiella oxytoca', 'Klebsiella oxytoca',  'Klebsiella oxytoca', 
+             'Staphylococcus aureus', 'Staphylococcus aureus','Staphylococcus aureus',
+             'Enterobacter cloacae','Enterobacter cloacae', 'Enterobacter cloacae',
+             'Pseudomonas aeruginosa/otitidis','Pseudomonas aeruginosa/otitidis', 'Pseudomonas aeruginosa/otitidis'
+             ) 
+
+prevalence <- c(Clostridioides_difficile_ref_mOTU_v2_0051_ctr.true,
+                Clostridioides_difficile_ref_mOTU_v2_0051_ctr.mixed,
+                Clostridioides_difficile_ref_mOTU_v2_0051_cdi,
+                Citrobacter_amalonaticus_ref_mOTU_v2_0042_ctr.true,
+                Citrobacter_amalonaticus_ref_mOTU_v2_0042_ctr.mixed,
+                Citrobacter_amalonaticus_ref_mOTU_v2_0042_cdi, 
+                Clostridium_perfringens_ref_mOTU_v2_1117_ctr.true,
+                Clostridium_perfringens_ref_mOTU_v2_1117_ctr.mixed,
+                Clostridium_perfringens_ref_mOTU_v2_1117_cdi, 
+                Clostridium_innocuum_ref_mOTU_v2_0643_ctr.true,
+                Clostridium_innocuum_ref_mOTU_v2_0643_ctr.mixed,
+                Clostridium_innocuum_ref_mOTU_v2_0643_cdi, 
+                Enterococcus_faecalis_ref_mOTU_v2_0116_ctr.true,
+                Enterococcus_faecalis_ref_mOTU_v2_0116_ctr.mixed,
+                Enterococcus_faecalis_ref_mOTU_v2_0116_cdi,
+                Klebsiella_oxytoca_ref_mOTU_v2_0079_ctr.true,
+                Klebsiella_oxytoca_ref_mOTU_v2_0079_ctr.mixed,
+                Klebsiella_oxytoca_ref_mOTU_v2_0079_cdi,
+                Staphylococcus_aureus_ref_mOTU_v2_0067_ctr.true,
+                Staphylococcus_aureus_ref_mOTU_v2_0067_ctr.mixed,
+                Staphylococcus_aureus_ref_mOTU_v2_0067_cdi,
+                Enterobacter_cloacae_ctr.true,
+                Enterobacter_cloacae_ctr.mixed,
+                Enterobacter_cloacae_cdi,
+                Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096_ctr.true,
+                Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096_ctr.mixed,
+                Pseudomonas_aeruginosa_otitidis_ref_mOTU_v2_0096_cdi)
+
+group <- c("True_control", "Mixed_control", "CDI", 
+           "True_control", "Mixed_control", "CDI", 
+           "True_control", "Mixed_control", "CDI", 
+           "True_control", "Mixed_control", "CDI",
+           "True_control", "Mixed_control", "CDI", 
+           "True_control", "Mixed_control", "CDI",
+           "True_control", "Mixed_control", "CDI",
+           "True_control", "Mixed_control", "CDI",
+           "True_control", "Mixed_control", "CDI")
+
+data.input <- data.frame(species, prevalence, group)
+
+data.input1 <- data.input %>% 
+  filter(species =='Clostridioides difficile')
+data.input2 <- data.input %>% 
+  filter(species !='Clostridioides difficile')
+
+plot_prevalences <- function(data.input, group, prevalence, species, colors, size_text) {
+  ggplot(data.input, aes(fill=group, y=prevalence, x=reorder(species, -prevalence))) +
+    geom_bar(position="dodge", stat="identity", width = 0.7) +
+    scale_fill_manual(values=colors) +
+    geom_text(aes(label=paste0(round(prevalence, digits = 1), "%")), hjust = -0.1, color="black", size=3, position = position_dodge(0.9)) +
+    theme_bw() +
+    theme(axis.title.x = element_text(size= size_text),
+        axis.title.y=element_blank(), 
+        axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0, size = 10),
+        legend.position = "none") +
+    ylim(0,100)
+    #coord_flip()
+}
+
+otherBugs1 <- plot_prevalences(data.input1, group, prevalence, species, colors, size_text)
+otherBugs2 <- plot_prevalences(data.input2, group, prevalence, species, colors, size_text)
+
+otherBugs1
+
+pdf(file="../../figures/CDI/mOTU2_prevalence.pdf", width=10, height=4)
+plot_grid(otherBugs1, otherBugs2,
+          nrow = 1,
+          align = 'h',
+          rel_widths = c(0.15,0.5))
+dev.off()
+```
+
+#C. difficile and other AAD species prevalence divided by study population
+```{r}
+tmp_joined <- left_join(all_merged_samples, tmp1_t %>%
+                          mutate(Samples = rownames(tmp1_t)),by = 'Samples') %>% 
+                          filter(Study!= "FMT_AU" & Study!= "FMT_Moss") 
+
+tmp_joined$Enterobacter_cloacae <- tmp_joined$"Enterobacter cloacae [ref_mOTU_v2_0266]" + 
+  tmp_joined$"Enterobacter cloacae [ref_mOTU_v2_0268]" + 
+  tmp_joined$"Enterobacter cloacae [ref_mOTU_v2_0266]" + 
+  tmp_joined$"Enterobacter cloacae [ref_mOTU_v2_0269]" + 
+  tmp_joined$"Enterobacter cloacae [ref_mOTU_v2_3252]" + 
+  tmp_joined$"Enterobacter cloacae [ref_mOTU_v2_0373]" 
+  
+get_prevalence <- function(data.input) {
+    data.input %>%
+    group_by(group, Study, species) %>% 
+    dplyr::summarise(total = dplyr::n(), targetPos = sum(target_bool)) %>% 
+    mutate(percentages = ifelse(is.na(targetPos), 0, 100*targetPos/total), group = group, Study = Study, species = species)
+}
+
+target_species <- c("Citrobacter amalonaticus [ref_mOTU_v2_0042]", 
+                    "Clostridioides difficile [ref_mOTU_v2_0051]", 
+                    "Klebsiella michiganensis/oxytoca [ref_mOTU_v2_0079]", 
+                    "Clostridium innocuum [ref_mOTU_v2_0643]", 
+                    "Clostridium perfringens [ref_mOTU_v2_1117]", 
+                    "Enterococcus faecalis [ref_mOTU_v2_0116]", 
+                    "Staphylococcus aureus [ref_mOTU_v2_0067]", 
+                    "Pseudomonas aeruginosa/otitidis [ref_mOTU_v2_0096]", 
+                    "Enterobacter_cloacae")
+
+collect.results <- data.frame()
+
+for (target in target_species){
+  
+  tmp <- tmp_joined %>% 
+  select(!!as.name(target), Study, group) %>% 
+  mutate(target_bool = ifelse(!!as.name(target) >0, TRUE, FALSE), species = target)
+  #break
+  partial <- get_prevalence(tmp)
+  #break
+  print(target)
+  #break
+  collect.results <- rbind(collect.results, as.data.frame(partial))
+}
+
+collect.results.clean <- as.data.frame(collect.results %>% 
+  mutate(label = str_remove(species, '\\[(ref|meta)_mOTU_v2_[0-9]{4}\\]')))
+
+collect.results.clean$label <- as.factor(collect.results.clean$label)
+collect.results.clean2 <- collect.results.clean %>% 
+         mutate(label=fct_relevel(label, "Clostridioides difficile ", "Pseudomonas aeruginosa/otitidis ", "Citrobacter amalonaticus ",
+                                    "Clostridium perfringens ", "Enterobacter_cloacae", "Staphylococcus aureus ", "Klebsiella michiganensis/oxytoca ",
+                                   "Enterococcus faecalis ", "Clostridium innocuum "))
+
+otherBugs_perStudy <- ggplot(collect.results.clean2, aes(fill=group, y=percentages, x=label)) +
+  geom_bar(position= position_dodge2(preserve = "single"), stat="identity", width = 0.5) +
+  scale_fill_manual(values=colors) +
+  geom_text(aes(label=paste0(round(percentages, digits = 1), "%")), hjust = -0.1, color="black", size=2, position = position_dodge(0.9)) +
+  theme_bw() +
+  theme(axis.title.x = element_text(size= size_text),
+      axis.title.y = element_text(size= size_text)) +
+  scale_x_discrete(limits = rev(levels(collect.results.clean2$label))) +
+  coord_flip() +
+  facet_grid(. ~ Study) 
+
+otherBugs_perStudy
+
+pdf(file="../../figures/mOTU2_prevalence_perStudy.pdf", width=15, height=8)
+grid.arrange(otherBugs_perStudy, nrow = 1)
+dev.off()
+```
+#plot fraction C. difficile carrying toxin genes
+```{r}
+study.totals <- collect.results.clean %>% 
+  filter(group=="CDI" & species == "Clostridioides difficile [ref_mOTU_v2_0051]") %>% 
+  select(group, Study, total)
+
+#load results from metagenomic reads mapping against VFDB 
+samples.tox <- read_csv("../../data/CDI/samples.tox_rich.csv") 
+metadata_file.tox <- left_join(all_merged_samples, samples.tox, by="Samples")
+  
+cdiff.pos.study <- metadata_file.tox %>% 
+  unique() %>% 
+  filter(group=="CDI" & Cdiff_tox =="Yes") %>% 
+  group_by(Study) %>% 
+  summarise(n=n())
+ 
+toxcdiff.perStudy <- left_join(study.totals, cdiff.pos.study, by="Study")  
+
+toxcdiff.perStudy <- toxcdiff.perStudy %>% 
+  mutate(percentages = ifelse(is.na(n), 0, 100*n/total))
+    
+toxcdiff <- ggplot(toxcdiff.perStudy, aes(fill=group, y=percentages, x="tox_cdiff")) +
+  geom_bar(position= position_dodge2(preserve = "single"), stat="identity", width = 0.5) +
+  scale_fill_manual(values=colors) +
+  geom_text(aes(label=paste0(round(percentages, digits = 1), "%")), hjust = -0.1, color="black", size=2, position = position_dodge(0.9)) +
+  theme_bw() +
+  theme(axis.title.x = element_text(size= size_text),
+      axis.title.y = element_text(size= size_text)) +
+  coord_flip() +
+  facet_grid(. ~ Study) +
+  ylim(0,100)
+
+pdf(file="../../figures/CDI/Cdiff_toxin_genes.pdf", width=15, height=1)
+grid.arrange(toxcdiff)
+dev.off()
+```
+
+#Plot relative abundances for C. difficile and other AAD species across sample groups
+```{r}
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+
+tmp_joined.AllRelAb <- tmp_joined.clean %>% 
+  ungroup() %>% 
+  select(-Study, -Samples) 
+
+tmp_joined.AllRelAb.long <- pivot_longer(data = tmp_joined.AllRelAb,
+                          cols = -group, 
+                          names_to = "Species",
+                          values_to = "rel_ab")
+
+tmp_joined.AllRelAb.long <- tmp_joined.AllRelAb.long %>% 
+  dplyr::mutate(Species_clean = str_remove(Species, 'mOTU_v2_'))
+
+tmp_joined.AllRelAb.long <- tmp_joined.AllRelAb.long %>%
+  mutate(Species_clean=fct_relevel(Species_clean, "Clostridium_innocuum_ref_0643", "Enterococcus_faecalis_ref_0116", "Klebsiella_oxytoca_ref_0079", "Enterobacter_cloacae", "Clostridium_perfringens_ref_1117", "Staphylococcus_aureus_ref_0067", "Pseudomonas_aeruginosa_otitidis_ref_0096","Citrobacter_amalonaticus_ref_0042", "Clostridioides_difficile_ref_0051"))
+
+#fixed excluding AAD species NOT in heatmap
+tmp_joined.AllRelAb.long <- tmp_joined.AllRelAb.long %>% 
+  mutate(Species_clean=fct_relevel(Species_clean, "Clostridium_innocuum_ref_0643", "Enterococcus_faecalis_ref_0116", "Clostridium_perfringens_ref_1117", "Clostridioides_difficile_ref_0051")) 
+
+tmp_joined.AllRelAb.long1 <- tmp_joined.AllRelAb.long %>% 
+  filter(Species_clean =='Clostridioides_difficile_ref_0051')
+tmp_joined.AllRelAb.long2 <- tmp_joined.AllRelAb.long %>% 
+  filter(Species_clean !='Clostridioides_difficile_ref_0051')
+
+my_comparisons.groups <- my_comparisons <- list(
+  c("CDI", "mixed_control"), 
+  c("CDI", "true_control"), 
+  c("mixed_control", "true_control"))
+  
+boxplot_AAD_relab1 <- ggplot(data = tmp_joined.AllRelAb.long1, mapping = aes(x = Species_clean, y = log10(rel_ab), fill = group)) +
+    geom_boxplot(outlier.size = -1, position = position_dodge(preserve = "single")) +
+    theme_bw() +
+    labs(y = "log10(relative abundance)", x="Species") +
+    theme(axis.title.x = element_text(size= size_text),
+          axis.title.y = element_text(size= size_text),
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0, size = 10))+
+    scale_fill_manual(values = colors) +
+  stat_compare_means(aes(group = group), method = "wilcox.test", label="p.signif")+
+  stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+  #coord_flip()
+
+boxplot_AAD_relab2 <- ggplot(data = tmp_joined.AllRelAb.long2, mapping = aes(x = Species_clean, y = log10(rel_ab), fill = group)) +
+    geom_boxplot(outlier.size = -1, position = position_dodge(preserve = "single")) +
+    theme_bw() +
+    labs(y = "log10(relative abundance)", x="Species") +
+    theme(axis.title.x = element_text(size= size_text),
+          axis.title.y = element_text(size= size_text),
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0, size = 10))+
+    scale_fill_manual(values = colors) +
+  stat_compare_means(aes(group = group), label = "p.signif", method = "wilcox.test") +
+  stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2) 
+  #coord_flip()
+
+
+pdf(file="../../figures/CDI/boxplot_AAD_relab.pdf", width=10, height=6)
+plot_grid(boxplot_AAD_relab1, boxplot_AAD_relab2,
+          nrow = 1,
+          align = 'h',
+          rel_widths = c(0.2,0.5))
+dev.off()
+
+#plot and p-value for C. innoccum only
+ggplot(data = tmp_joined.AllRelAb.long2 %>% filter(Species_clean=="Clostridium_innocuum_ref_0643"), mapping = aes(x = group, y = log10(rel_ab))) +
+    geom_boxplot(outlier.size = -1) +
+    theme_bw() +
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0, size = 10), 
+          strip.background = element_rect(color="white", fill="white")) +
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=3, angle = 0) +
+  stat_compare_means(comparisons = my_comparisons.groups, method = "wilcox.test")
+
+```
+
+#Plot number of AAD species (other than cdiff) found in CDI samples, divided by presence/absence of C. difficile
+```{r}
+myColors <- c("#fef0d9","#fdd49e","#fdbb84","#fc8d59","#ef6548","#d7301f","#990000")
+myColors_rev <- c("#990000","#d7301f","#ef6548","#fc8d59","#fdbb84","#fdd49e","#fef0d9")
+myColors_old <- c("#67001f","#b2182b","#d6604d","#f4a582","#fddbc7","#4d4d4d")
+
+#CDI Cdiff Negative samples
+tmp_joined.clean.noCDIcdiffNeg <- tmp_joined.clean %>% 
+  ungroup() %>% 
+  filter(group == "CDI" & Clostridioides_difficile_ref_mOTU_v2_0051 == 0.000000e+00) %>% 
+  select(-Study, -Samples, -group, -Clostridioides_difficile_ref_mOTU_v2_0051) 
+
+total.noCDIcdiffNeg <- nrow(tmp_joined.clean.noCDIcdiffNeg)
+tmp_joined.clean.noCDIcdiffNeg$count <- apply(tmp_joined.clean.noCDIcdiffNeg, 1, function(x) length(which(x>0))) 
+
+tmp_joined.clean.noCDIcdiffNeg <- tmp_joined.clean.noCDIcdiffNeg %>% 
+  select(count) %>% 
+  group_by(count) %>% 
+  dplyr::summarise(n = dplyr::n()) %>% 
+  mutate(class = "CdiffNeg") 
+
+tmp_joined.clean.noCDIcdiffNeg$perc <-  (tmp_joined.clean.noCDIcdiffNeg$n*100)/total.noCDIcdiffNeg
+
+#CDI Cdiff Positive samples
+tmp_joined.clean.noCDIcdiffPos <- tmp_joined.clean %>% 
+  ungroup() %>% 
+  filter(group == "CDI" & Clostridioides_difficile_ref_mOTU_v2_0051 > 0.000000e+00) %>% 
+  select(-Study, -Samples, -group, -Clostridioides_difficile_ref_mOTU_v2_0051) 
+
+total.noCDIcdiffPos <- nrow(tmp_joined.clean.noCDIcdiffPos)
+tmp_joined.clean.noCDIcdiffPos$count <- apply(tmp_joined.clean.noCDIcdiffPos, 1, function(x) length(which(x>0))) 
+
+tmp_joined.clean.noCDIcdiffPos <- tmp_joined.clean.noCDIcdiffPos %>% 
+  select(count) %>% 
+  group_by(count) %>% 
+  dplyr::summarise(n = dplyr::n()) %>% 
+  mutate(class = "CdiffPos") 
+
+tmp_joined.clean.noCDIcdiffPos$perc <-  (tmp_joined.clean.noCDIcdiffPos$n*100)/total.noCDIcdiffPos
+
+#merge two CDI cdiff+ and CDI cdiff- tables
+tmp_joined.clean.noCDI.merged <- rbind(tmp_joined.clean.noCDIcdiffPos, tmp_joined.clean.noCDIcdiffNeg)
+
+hist.CDICdiff.plot <- ggplot(tmp_joined.clean.noCDI.merged, aes(y=perc, x=class, fill = as.factor(count))) + 
+    geom_bar(position="stack", stat="identity") +
+    theme_bw() +
+  geom_text(aes(label=paste0(round(perc, digits = 1), "%")), vjust=1.4, color="black", size=3, position = "stack") +
+  labs(title = "% of CDI cdiff- samples with other AAD", x = "Number of AAD (besides Cdiff)", y = "percentage") +
+  scale_fill_manual(values = myColors) +
+  coord_flip()
+
+hist.CDICdiff.plot
+
+pdf(file="../../figures/CDI_otherAAD.pdf", width=4, height=8)
+grid.arrange(hist.CDICdiff.plot, nrow = 1)
+dev.off()
+```
+
+

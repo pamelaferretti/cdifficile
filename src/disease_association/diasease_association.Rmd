@@ -1,0 +1,255 @@
+---
+title: "Analysis of C. difficile prevalence across diseases"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+```
+
+#Load metadata table 
+```{r}
+#after timeseries dereplication: one sample per subject or per timeseries
+metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character(), 
+                            diet = col_character()
+))
+
+#preliminary filtering
+metadata_file2 <- metadata_file %>%
+    filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes" & 
+             !is.na(Age_group) & Status == "Diseased" & subject_disease_status != "COHORT" & subject_disease_status != "CTR" &
+             !is.na(subject_disease_status)) %>% 
+    mutate(cdiff_bool = ifelse(Cdiff=="Yes", TRUE, FALSE))
+```
+
+#Get prevalence data divided by health status
+```{r}
+get_prevalence <- function(data.input) {
+    data.input %>%
+    group_by(subject_disease_status) %>% 
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total)) %>% 
+    filter(total>=10) %>%
+    mutate(subject_disease_status = fct_reorder(subject_disease_status, desc(percentages)))
+}
+
+prevalence_diseases <- get_prevalence(metadata_file2)
+```
+
+#Get prevalence data divided by health status and age group
+```{r}
+get_prevalence <- function(data.input, age_group) {
+    data.input %>%
+    filter(Age_group == age_group) %>%
+    mutate(subject_disease_status = case_when(
+             (as.character(subject_disease_status) == "NEC") ~ "neonatal sepsis / NEC", 
+             (as.character(subject_disease_status) == "neonatal sepsis") ~ "neonatal sepsis / NEC",
+             (as.character(subject_disease_status) == "ADA") ~ "CRC, ADA and NAA", 
+             (as.character(subject_disease_status) == "CRC") ~ "CRC, ADA and NAA",
+             (as.character(subject_disease_status) == "NAA") ~ "CRC, ADA and NAA", 
+             (as.character(subject_disease_status) == "MS") ~ "pre-diabetes and MS",
+             (as.character(subject_disease_status) == "pre-diabetes") ~ "pre-diabetes and MS",
+             (as.character(subject_disease_status) == "obesity") ~ "obesity / overweight",
+             (as.character(subject_disease_status) == "overweight") ~ "obesity / overweight",
+             (as.character(subject_disease_status) == "atherosclerotic cardiovascular disease") ~ "ASCVD",
+             TRUE ~ subject_disease_status)) %>% 
+    group_by(subject_disease_status) %>% 
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(perAgeGroup_percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total), Age_group = age_group) %>% 
+    filter(total>=10)
+}
+
+prevalence_infant <- get_prevalence(metadata_file2, "Infant")
+prevalence_child <- get_prevalence(metadata_file2, "Child")
+prevalence_adolescent <- get_prevalence(metadata_file2, "Adolescent")
+prevalence_adult <- get_prevalence(metadata_file2, "Adult")
+prevalence_elderly <- get_prevalence(metadata_file2, "Elderly")
+
+table.plot.ages <- rbind(prevalence_infant,prevalence_child, prevalence_adolescent, prevalence_adult, prevalence_elderly) %>% 
+  mutate(Age_group = fct_relevel(Age_group, "Infant", "Child", "Adolescent", "Adult", "Elderly")) %>% 
+  group_by(subject_disease_status) %>% 
+  mutate(perDisease_percentage = 100*sum(cdiffPos)/sum(total),
+         #adjusted percentage allows the sum of the perDisease percentages to coincide with the values showed in the plot above (no age group division)
+         adjusted_percentage = 100*cdiffPos/sum(total)) %>%
+  filter(perDisease_percentage != 0 & subject_disease_status != "multiple" & subject_disease_status != "hospitalized patient with no specific diagnosis") %>% 
+  ungroup() %>%
+  mutate(category = case_when(
+             (subject_disease_status == "PPI") ~ "Drugs", 
+             (subject_disease_status == "Chemotherapy") ~ "Drugs", 
+             (subject_disease_status == "allogeneic_bone_marrow_transplant") ~ "Drugs", 
+             TRUE ~ "Diseases"),
+         subject_disease_status = fct_reorder(subject_disease_status, desc(perDisease_percentage)),
+         Age_group = fct_relevel(Age_group, "Elderly", "Adult", "Adolescent", "Child", "Infant"))
+
+table.plot.ages.diseases <- table.plot.ages %>% 
+  filter(category == "Diseases")
+```
+
+#Plot prevalence divided by health status and age group
+```{r}
+myColor1 <- c("#003399", "#3399FF", "#00CCCC", "#99CC00", "goldenrod1")
+myColor2 <- c("goldenrod1", "#FF9999", "#FF6666", "#993333", "#660000")
+
+#preliminary filtering
+metadata_file2_abx <- metadata_file2 %>%
+    filter(Abx=="Yes")
+
+get_prevalence_abx <- function(data.input, age_group) {
+    data.input %>%
+    filter(Age_group == age_group) %>%
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(perAgeGroup_percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total), Age_group = age_group) %>% 
+    filter(total>=10)
+}
+
+prevalence_infant_abx <- get_prevalence_abx(metadata_file2_abx, "Infant")
+prevalence_child_abx <- get_prevalence_abx(metadata_file2_abx, "Child")
+prevalence_adolescent_abx <- get_prevalence_abx(metadata_file2_abx, "Adolescent")
+prevalence_adult_abx <- get_prevalence_abx(metadata_file2_abx, "Adult")
+prevalence_elderly_abx <- get_prevalence_abx(metadata_file2_abx, "Elderly")
+
+table.plot.ages_abx <- rbind(prevalence_infant_abx,prevalence_child_abx, prevalence_adolescent_abx, prevalence_adult_abx, prevalence_elderly_abx) %>% 
+  mutate(Age_group = fct_relevel(Age_group, "Infant", "Child", "Adolescent", "Adult", "Elderly"), 
+         subject_disease_status = "Abx") %>% 
+  mutate(perDisease_percentage = 100*sum(cdiffPos)/sum(total),
+         #adjusted percentage allows the sum of the perDisease percentages to coincide with the values showed in the plot above (no age group division)
+         adjusted_percentage = 100*cdiffPos/sum(total)) %>%
+  filter(perDisease_percentage != 0) %>% 
+  mutate(category = "Drugs", 
+         Age_group = fct_relevel(Age_group, "Elderly", "Adult", "Adolescent", "Child", "Infant"))
+
+table.plot.ages_abx <- table.plot.ages_abx %>% 
+  select(subject_disease_status, total, cdiffPos, perAgeGroup_percentages, Age_group, perDisease_percentage, adjusted_percentage, category)
+
+table.plot.ages.drugs <- table.plot.ages %>% 
+  filter(category == "Drugs") %>% 
+  rbind(.,table.plot.ages_abx)
+
+p2a <- ggplot(data=table.plot.ages.diseases, aes(x=subject_disease_status, y=adjusted_percentage, fill = Age_group)) +
+  geom_bar(stat="identity", position = "stack") +
+  geom_text(aes(label=total), vjust=-0.3, color="black", size=3, position = "stack") +
+  geom_text(aes(label=paste0(round(perAgeGroup_percentages, digits = 1), "%")), vjust=1.4, color="white", size=3, position = "stack") +
+  labs(y = "Prevalence C. difficile (%)")+
+  theme_bw() +
+  ylim(0, 100) +
+  scale_fill_manual(values = myColor1) +
+  theme(legend.position = c(0.9, 0.8)) +
+  labs(fill="Age group")
+
+p2a
+
+p2b <- ggplot(data=table.plot.ages.drugs, aes(x=subject_disease_status, y=adjusted_percentage, fill = Age_group)) +
+  geom_bar(stat="identity", position = "stack") +
+  geom_text(aes(label=total), vjust=-0.3, color="black", size=3, position = "stack") +
+  geom_text(aes(label=paste0(round(perAgeGroup_percentages, digits = 1), "%")), vjust=1.4, color="white", size=3, position = "stack") +
+  theme_bw() +
+  ylim(0, 100) +
+  scale_fill_manual(values = myColor1) +
+    theme(legend.position = "none") 
+
+p2b
+```
+
+#plot number studies per disease
+```{r}
+n_studies_per_disease <- metadata_file2 %>%
+      mutate(subject_disease_status = case_when(
+             (as.character(subject_disease_status) == "NEC") ~ "neonatal sepsis / NEC", 
+             (as.character(subject_disease_status) == "neonatal sepsis") ~ "neonatal sepsis / NEC",
+             (as.character(subject_disease_status) == "ADA") ~ "CRC, ADA and NAA", 
+             (as.character(subject_disease_status) == "CRC") ~ "CRC, ADA and NAA",
+             (as.character(subject_disease_status) == "NAA") ~ "CRC, ADA and NAA", 
+             (as.character(subject_disease_status) == "MS") ~ "pre-diabetes and MS",
+             (as.character(subject_disease_status) == "pre-diabetes") ~ "pre-diabetes and MS",
+             (as.character(subject_disease_status) == "obesity") ~ "obesity / overweight",
+             (as.character(subject_disease_status) == "overweight") ~ "obesity / overweight",
+             (as.character(subject_disease_status) == "atherosclerotic cardiovascular disease") ~ "ASCVD",
+             TRUE ~ subject_disease_status)) %>% 
+    group_by(subject_disease_status) %>% 
+  distinct(Study) %>%
+  mutate(n_studies = n()) %>% 
+  select(-Study)
+
+studies_per_disease.disease <- left_join(table.plot.ages.diseases, n_studies_per_disease)
+studies_per_disease.disease$subject_disease_status <- as.factor(studies_per_disease.disease$subject_disease_status)
+
+studies_per_disease.disease <- studies_per_disease.disease %>% 
+  #group_by(subject_disease_status) %>% 
+  mutate(subject_disease_status=fct_relevel(subject_disease_status,"cystic fibrosis","neonatal sepsis / NEC","CDI","Diarrhea","CD","liver cirrhosis","breast cancer","Tuberculosis","ASCVD", "UC", "not assigned", "T2D","CRC, ADA and NAA"))
+
+counts1 <- ggplot(data=studies_per_disease.disease, aes(x=subject_disease_status, y=n_studies)) +
+  geom_point(size = 2, color = "#333333") +
+  ylim(0,15) +
+  labs(x="Disease category", y = "N. studies")+
+  theme_bw() +
+  theme(text = element_text(size=12),
+        axis.title.x=element_blank(),
+        axis.text.x = element_text(angle=0, vjust=1.0, hjust = 1.0),
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 12)) 
+
+counts1
+```
+
+#plot number studies per drug usage
+```{r}
+n_studies_abx <- metadata_file2 %>%
+  filter(Abx == "Yes") %>% 
+  group_by(Abx) %>%
+  distinct(Study) %>% 
+  dplyr::summarize(n_studies = n()) %>% 
+  rename(subject_disease_status = Abx)
+
+num_studies_drugs <- rbind(n_studies_abx)
+readable_age_label <- c( "                                            Antibiotics")
+
+counts2 <- ggplot(data=num_studies_drugs, aes(x=subject_disease_status, y=n_studies)) +
+  geom_point(size = 2, color = "#333333") +
+  ylim(0,15) +
+  labs(x="Disease category", y = "N. studies")+
+  theme_bw() +
+  theme(text = element_text(size=12),
+        axis.title.x=element_blank(),
+        axis.text.x = element_text(angle=0, vjust=1.0, hjust = 1.0),
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 12)) +
+    scale_x_discrete(labels= readable_age_label) 
+```
+
+#arrange and save combined plots
+```{r}
+pdf(file="../../figures/disease_association/disease_association.pdf", width=20, height=12)
+grid.arrange(p2a, p2b, counts1, counts2, nrow = 2, widths = c(1.0, 0.15), heights = c(1.0, 0.2))
+dev.off()
+
+```

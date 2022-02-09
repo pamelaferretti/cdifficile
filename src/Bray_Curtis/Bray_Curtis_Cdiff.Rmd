@@ -1,0 +1,339 @@
+---
+title: "Bray curtis similarity in mother-infant pairs"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#prepare environment
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(ggpubr)
+library(dplyr)
+library(vegan)
+```
+
+#Load metadata Table 
+```{r}
+#after timeseries dereplication: one sample per subject or per timeseries
+metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Host_species = col_factor(),
+                            Animal_age = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character(), 
+                            diet = col_character(),
+                            Mother_infant_coupleID = col_character()
+))
+```
+
+
+#define age ranges of interest
+```{r}
+infant_interval = 2 #months
+child_adol_interval = 12*3 #3yrs
+adult_elderly_interval = 12*10 #10yrs
+
+age_range_as_label <- function(age_range) {
+  return(paste0(age_range[1], "_", age_range[2], "M"))
+}
+
+replace_age_range <- function(age_ranges, i, sequence, interval) {
+  age_ranges[[length(age_ranges)+ 1]] <- c(i, i+interval)
+  return(age_ranges)
+}
+
+age_ranges <- list()
+#ad hoc age ranges 0-1M and 1-2M
+age_ranges[[length(age_ranges)+ 1]] <- c(0, 1)
+age_ranges[[length(age_ranges)+ 1]] <- c(1, 2)
+
+#infants age ranges defined by equal time intervals
+seq_infant <- seq(2, 12-infant_interval, by=infant_interval)
+for (i in seq_infant){
+  age_ranges <- replace_age_range(age_ranges, i, seq_infant, infant_interval)
+}
+
+#age ranges for children and adolescents
+seq_child_adol <- seq(12, 228-child_adol_interval, by=child_adol_interval)
+for (i in seq_child_adol){
+  age_ranges <- replace_age_range(age_ranges, i, seq_child_adol, child_adol_interval)
+}
+
+# age ranges for adults and elderly
+seq_adult_elderly <- seq(228, 1308-adult_elderly_interval, by=adult_elderly_interval)
+for (i in seq_adult_elderly){
+  age_ranges <- replace_age_range(age_ranges, i, seq_adult_elderly, adult_elderly_interval)
+}
+
+age_ranges_labels <- mapply(age_range_as_label, age_ranges)
+```
+
+#manipulate metadata table
+```{r}
+convert_range <- function(val, age_ranges) {
+  values <- str_split(val, "-")
+  # If we have an age range
+  if(length(values) == 2) {
+    values <- as.double(values)
+    for (age_range in age_ranges){
+      if (values[1] >= age_range[1] && values[1] < age_range[2] && 
+          values[2] >= age_range[1] && values[2] < age_range[2]) {
+        return(age_range_as_label(age_range))
+      }
+    }
+  }
+  
+  # if the age range didn't fit into any category it returns the age interval itself
+  if(str_detect(val, "-")) {return(val)}
+  
+  # Assume that anything at this point is a number
+  dval <- as.double(val)
+  # If the value is not a number return whatever was there to begin with
+  if(is.na(dval)) {stop(paste0("Unexpected value in specified column (Age_months?)", " '", val, "'"))}
+  # from this point onwards only numbers should remain
+  for (age_range in age_ranges){
+    if (dval >= age_range[1] && dval < age_range[2]) {
+      return(age_range_as_label(age_range))
+    }
+  }
+  return(dval)
+}
+
+convert_to_ranges <- function(age_months, age_ranges){
+  mapply(convert_range, age_months, MoreArgs=list(age_ranges=age_ranges))
+}
+```
+
+#metadata filtering
+```{r}
+m1 <- metadata_file %>%
+  filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & !is.na(Mother_infant_coupleID)) %>%
+  filter((Age_group=="Child" | Age_group=="Infant") & !is.na(Age_months))
+
+m1_age_ranges <- m1 %>% 
+  mutate(age_plot_range = convert_to_ranges(Age_months, age_ranges))
+
+m2 <- metadata_file %>%
+  filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & !is.na(Mother_infant_coupleID)) %>%
+  filter(Age_group=="Adult") %>% 
+  mutate(age_plot_range = "NA")
+
+m_all <- rbind(m1_age_ranges, m2)
+          
+metadata_file2 <-  m_all %>% 
+  group_by(Mother_infant_coupleID) %>% 
+  #filter couples with at least one mother and one infant/child sample
+  dplyr::mutate(atLeastOneInfantChild = sum(Age_group=="Child" | Age_group=="Infant")>0,
+                atLeastOneAdult = sum(Age_group=="Adult")>0) %>% 
+  filter(atLeastOneInfantChild & atLeastOneAdult) %>% 
+  ungroup()
+```
+
+
+#load count table
+```{r}
+count_file <- read_tsv("../../data/mOTU_counts.tsv")
+```
+
+#transform count table into abundance table
+```{r}
+transform_to_abundance <- function(column){
+  column/sum(column)
+}
+```
+
+#bray curtis index calculation
+```{r}
+metadata_file.unique_coupleID <- metadata_file2 %>% 
+  mutate(study_Mother_infant_coupleID = paste0(Study, "_", Mother_infant_coupleID))
+
+distinct_df = metadata_file.unique_coupleID %>% distinct(study_Mother_infant_coupleID)
+distinct_vector = distinct_df$study_Mother_infant_coupleID
+
+#create empty df to collect results
+collect.results <- data.frame()
+
+for (unique_coupleID in distinct_vector){
+
+    get_samples.couple <- function(metadata_file_all){
+      metadata_file_all %>% 
+        filter(study_Mother_infant_coupleID == unique_coupleID) %>% 
+        pull(Samples)
+    }
+    
+    samples_target.couple <- get_samples.couple(metadata_file.unique_coupleID)
+    count_file_filtered.couple <- count_file %>% 
+      select(...1, all_of(samples_target.couple))
+    
+    abundances.couple <- count_file_filtered.couple %>%
+      mutate_at(vars(-...1), transform_to_abundance) %>% 
+      column_to_rownames("...1")
+    
+    abundances.couple_t<-data.frame(t(abundances.couple))
+    
+    infant.samples <- metadata_file.unique_coupleID %>% 
+      filter(study_Mother_infant_coupleID == unique_coupleID & (Age_group == "Infant" | Age_group == "Child")) %>%
+      pull(Samples)
+    
+    mother.samples <- metadata_file.unique_coupleID %>% 
+      filter(study_Mother_infant_coupleID == unique_coupleID & Age_group == "Adult") %>%
+      pull(Samples)
+    
+    for (sampleM in mother.samples){
+      for (sampleI in infant.samples){
+        #print(paste0(sampleM, "-", sampleI))
+
+        tmp <- abundances.couple_t %>%
+          filter(row.names(abundances.couple_t) %in% c(sampleM,sampleI))
+
+        bray.tmp = vegdist(tmp, "bray")
+        dist <- as.matrix(bray.tmp)[2,1]
+        #populate df
+        collect.results <- rbind(collect.results, data.frame(s1.mom=sampleM, s2.infant=sampleI, bray.dist=dist))
+     }
+    }
+}
+
+collect.results.metadata <- left_join(collect.results, 
+                                      (metadata_file.unique_coupleID %>% 
+                                         select(Samples, Age_months, Age_group, Status, Premature, Delivery_mode, Geography, Continent, Cdiff, study_Mother_infant_coupleID, age_plot_range)), 
+                                      by = c("s2.infant" = "Samples")) 
+   
+collect.results.metadata <- collect.results.metadata %>% 
+  mutate(BC_dissim = 1-bray.dist)
+```
+
+#plot bray results divided by status
+```{r}
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+
+collect.results.metadata.h <- collect.results.metadata %>% 
+  filter(Status=="Healthy")
+
+#all samples are from FULL TERM, HEALTHY infants.
+#distinction based on delivery mode and continent leaves too few samples per age category
+bray.allAges <- ggplot(data = collect.results.metadata.h, mapping = aes(x = factor(age_plot_range, levels = c("0_1M","1_2M","2_4M","4_6M","6_8M","8_10M","10_12M","12_48M","48_84M","84_120M","120_228M","228_348M","348_468M","468_588M","588_708M","708_828M","828_948M",">948M")), y = BC_dissim, fill = Cdiff)) +
+    geom_boxplot(outlier.size = -1, position = position_dodge(preserve = "single")) +
+    geom_jitter(position=position_jitterdodge(jitter.width=0.25), alpha = 0.4, size = 0.5) +
+    theme_bw() +
+    labs(x="Age group", y = "Bray curtis dissimilarity (1-BC)")+
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0), 
+          strip.background = element_rect(color="white", fill="white"), 
+          axis.title.x = element_text(size= 10),
+          axis.title.y = element_text(size= 10)) +
+    facet_grid(cols = vars(factor(Status,))) +
+    scale_fill_manual(values = c("cornflowerblue", "goldenrod1")) +
+    stat_compare_means(aes(group = Cdiff), label = "p.signif") +
+    ylim(0, 1.05)+
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+
+bray.allAges
+```
+
+#plot bray results divided by status - std pooling
+```{r}
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+
+firstsem <- c("0_1M", "1_2M", "2_4M", "4_6M")
+secsem <- c("6_8M", "8_10M", "10_12M")
+
+collect.results.metadata.h <- collect.results.metadata %>% 
+  filter(Status=="Healthy" & (Age_group == "Infant" | Age_group=="Child")) %>% 
+  mutate(Age_group_custom = case_when(
+             (Age_group=="Infant" & (age_plot_range %in% firstsem)) ~ "Infant_06M", 
+             (Age_group=="Infant" & (age_plot_range %in% secsem)) ~ "Infant_612M",
+             TRUE ~ "Child"))
+
+#all samples are from FULL TERM, HEALTHY infants.
+#distinction based on delivery mode and continent leaves too few samples per age category
+bray.allAges.std <- ggplot(data = collect.results.metadata.h, mapping = aes(x = factor(Age_group_custom, levels = c("Infant_06M","Infant_612M", "Child")), y = BC_dissim, fill = Cdiff)) +
+    geom_boxplot(outlier.size = -1, position = position_dodge(preserve = "single")) +
+    geom_jitter(position=position_jitterdodge(jitter.width=0.25), alpha = 0.4, size = 0.5) +
+    theme_bw() +
+    labs(x="Age group", y = "Bray curtis dissimilarity (1-BC)")+
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0), 
+          strip.background = element_rect(color="white", fill="white"), 
+          axis.title.x = element_text(size= 10),
+          axis.title.y = element_text(size= 10)) +
+    facet_grid(cols = vars(factor(Status,))) +
+    scale_fill_manual(values = c("cornflowerblue", "goldenrod1")) +
+    stat_compare_means(aes(group = Cdiff), label = "p.signif") +
+    ylim(0, 1.05)+
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+
+bray.allAges.std
+```
+
+#plot bray results divided by status
+```{r}
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+
+firstcat <- c("0_1M", "1_2M", "2_4M")
+secondcat <- c("4_6M", "6_8M")
+thirdcat <- c("8_10M", "10_12M")
+
+collect.results.metadata.h <- collect.results.metadata %>% 
+  filter(Status=="Healthy" & (Age_group == "Infant" | Age_group=="Child")) %>% 
+  mutate(Age_group_custom = ifelse(Age_group=="Infant" & (age_plot_range %in% firstcat), "Infant_04M",
+                                   ifelse(Age_group=="Infant" & (age_plot_range %in% secondcat), "Infant_48M",
+                                          ifelse(Age_group=="Infant" & (age_plot_range %in% thirdcat), "Infant_812M",
+                                                 "Child"))))
+
+#all samples are from FULL TERM, HEALTHY infants.
+#distinction based on delivery mode and continent leaves too few samples per age category
+bray.allAges.std <- ggplot(data = collect.results.metadata.h, mapping = aes(x = factor(Age_group_custom, levels = c("Infant_04M","Infant_48M","Infant_812M", "Child")), y = BC_dissim, fill = Cdiff)) +
+    geom_boxplot(outlier.size = -1, position = position_dodge(preserve = "single")) +
+    geom_jitter(position=position_jitterdodge(jitter.width=0.25), alpha = 0.4, size = 0.5) +
+    theme_bw() +
+    labs(x="Age group", y = "Bray Curtis similarity")+
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          strip.background = element_rect(color="white", fill="white"), 
+          axis.title.x = element_text(size= 10),
+          axis.title.y = element_text(size= 10)) +
+    facet_grid(cols = vars(factor(Status,))) +
+    scale_fill_manual(values = c("cornflowerblue", "goldenrod1")) +
+    stat_compare_means(aes(group = Cdiff), label = "p.signif") +
+    ylim(0, 1.05)+
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+
+bray.allAges.std
+```
+
+#plot results
+```{r}
+pdf(file="../../figures/Bray_Curtis/bray_curtis.pdf", width=10, height=5)
+grid.arrange(bray.allAges.std, nrow = 1)
+dev.off()
+```
+

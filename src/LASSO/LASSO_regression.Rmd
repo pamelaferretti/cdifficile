@@ -1,0 +1,76 @@
+---
+title: "LASSO regression on cdiff+/- prediction using metadata info only"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#prepare environment
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(ggpubr)
+library(dplyr)
+library(vegan)
+library(SIAMCAT)
+library(cowplot)
+```
+
+#predict Cdiff presence based on metadata using LASSO - based on CDI/CONTROL samples ONLY------------------------
+#plot AUC values 
+```{r}
+#load metadata table
+metadata_splitted.file <- read_csv("../../data/CDI/CDI_and_splittedControl_samples.csv")
+
+metadata_splitted.file.totals <- metadata_splitted.file %>% 
+  group_by(Study) %>% 
+  summarize(totals = n()) 
+
+total_all <- as.numeric(metadata_splitted.file %>% count())
+all.merged <- left_join(auc.results, metadata_splitted.file.totals, by=c("left.out"="Study"))
+all.merged[is.na(all.merged)] <- total_all
+all.merged <- tidyr::pivot_wider(all.merged, names_from = type, values_from = auroc)
+
+darkcolor <- c("#3A3939")
+
+#number of samples per study
+p1 <- ggplot(all.merged, aes(x=reorder(left.out, totals), y=totals)) +
+  geom_segment(aes(xend=left.out, yend=0), color=darkcolor, size=1) +
+  geom_point(color=darkcolor, size=2) +
+  coord_flip() +
+  theme_bw() 
+
+#AUC values for CDI vs both healthy and diseased controls, divided by study
+p2 <- ggplot(all.merged %>% filter(group=="all")) +
+  geom_segment( aes(x=reorder(left.out, totals), xend=left.out, y=with_cdiff, yend=without_cdiff), color=darkcolor, size=1) +
+  geom_point( aes(x=reorder(left.out, totals), y=with_cdiff), color=darkcolor, size=2 ) +
+  geom_point( aes(x=left.out, y=without_cdiff), color="grey", size=2 ) +
+  coord_flip() +
+  theme_bw() +
+  ylim(0.5,1.0)+
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+
+#AUC values for CDI vs  healthy controls, divided by study
+p3 <- ggplot(all.merged %>% filter(group=="true_controls")) +
+  geom_segment( aes(x=reorder(left.out, totals), xend=left.out, y=with_cdiff, yend=without_cdiff), color=darkcolor, size=1) +
+  geom_point( aes(x=reorder(left.out, totals), y=with_cdiff), color=darkcolor, size=2 ) +
+  geom_point( aes(x=left.out, y=without_cdiff), color="grey", size=2 ) +
+  coord_flip() +
+  ylim(0.5,1.0)+
+  theme_bw() 
+
+#combine and save plot
+pdf(file="../../figures/LASSO/aurocs_perStudy.pdf", width=10, height=4)
+plot_grid(p1, p2, p3,
+          nrow = 1,
+          align = 'h',
+          rel_widths = c(0.17,0.1,0.17))
+dev.off()
+```
+

@@ -1,0 +1,614 @@
+---
+title: "C. difficile prevalence and abundance analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library("reshape2")
+library("grid")
+
+size_text = 10
+```
+
+#load and filter metadata table 
+```{r}
+#after timeseries dereplication: one sample per subject or per timeseries
+metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Host_species = col_factor(),
+                            Animal_age = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character(), 
+                            diet = col_character()
+))
+
+#preliminary filtering
+metadata_file2 <- metadata_file %>%
+    filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes" & !is.na(Age_months))
+```
+
+#animal samples
+```{r}
+metadata_file_animal <- metadata_file %>%
+    filter(Host=="Animal" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes", 
+           Study != "Grzeskowiak_2017_cdiff_pig") 
+
+total <- metadata_file_animal %>% 
+  group_by(Host_species) %>%
+  summarise(count = n())
+
+cdiffPos <- metadata_file_animal %>%
+  filter(Cdiff == "Yes") %>% 
+  group_by(Host_species) %>%
+  summarise(count_pos = n()) 
+
+#calculate prevalence values
+prevalence.plot <- merge(total, cdiffPos, all = TRUE) %>% 
+  mutate(prevalence = count_pos*100/count) %>% 
+  #keep species with more than 10 samples available
+  filter(count >10)
+
+prevalence.plot[is.na(prevalence.plot)] = 0
+
+readable_species_label <- c("Dog", "Cat", "Cow", "Pig", "Vulture", "Chicken")
+
+prevalence.plot.sorted <- prevalence.plot %>% 
+  filter(prevalence != 0) %>% 
+  mutate(Host_species = fct_relevel(Host_species, "Canis lupus familiaris", "Felis catus", "Bos taurus", "Sus scrofa domesticus", "Gymnogyps californianus" , "Gallus gallus domesticus"))
+
+prevalence.plot.sorted <- prevalence.plot.sorted %>% 
+  mutate(point_size = case_when(
+             (count>=5 & count<50) ~ 1, 
+             (count>=50 & count<100) ~ 2,
+             (count>=100 & count<500) ~ 3,
+             (count>=500) ~ 3,
+             #less than n=5 observations supporting the group
+             TRUE ~ 0)) %>% 
+  filter(point_size != 0) %>% 
+  mutate(Vertebrate_class = case_when(
+             (Host_species == "Gallus gallus domesticus" || Host_species == "Gymnogyps californianus") ~ "Bird", 
+             TRUE ~ "Mammal"))
+         
+colors <- c('#e66101','#e66101')
+
+p0 <- ggplot(prevalence.plot.sorted, aes(x=Host_species, y=prevalence, group=Vertebrate_class)) +
+  geom_segment( aes(x=Host_species, xend=Host_species, y=0, yend=prevalence), size = 1) +
+  geom_point(shape=21, color="black", stroke = 2, aes(fill=Vertebrate_class, size = as.factor(point_size))) +
+  scale_fill_manual(values=colors) +
+  labs(x="Host species", y = "Prevalence (%)")+
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0, size = size_text),
+        axis.title.x = element_text(size= size_text),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        legend.position = "none") +
+  guides(fill = FALSE) +
+  ylim(0,100)+
+  scale_x_discrete(labels= readable_species_label) +
+  scale_size_discrete(labels=c("5 \u2264 N. samples < 50", "100 \u2264 N. samples < 500", "N. samples \u2265  500")) +
+  ylim(0,100)
+```
+
+#define age ranges of interest
+```{r}
+infant_interval = 2 #months
+child_adol_interval = 12*3 #3yrs
+adult_elderly_interval = 12*10 #10yrs
+
+age_range_as_label <- function(age_range) {
+  return(paste0(age_range[1], "_", age_range[2], "M"))
+}
+
+replace_age_range <- function(age_ranges, i, sequence, interval) {
+  age_ranges[[length(age_ranges)+ 1]] <- c(i, i+interval)
+  return(age_ranges)
+}
+
+age_ranges <- list()
+#ad hoc age ranges 0-1M and 1-2M
+age_ranges[[length(age_ranges)+ 1]] <- c(0, 1)
+age_ranges[[length(age_ranges)+ 1]] <- c(1, 2)
+
+#infants age ranges defined by equal time intervals
+seq_infant <- seq(2, 12-infant_interval, by=infant_interval)
+for (i in seq_infant){
+  age_ranges <- replace_age_range(age_ranges, i, seq_infant, infant_interval)
+}
+
+#children and adolescents
+seq_child_adol <- seq(12, 228-child_adol_interval, by=child_adol_interval)
+for (i in seq_child_adol){
+  age_ranges <- replace_age_range(age_ranges, i, seq_child_adol, child_adol_interval)
+}
+
+#adults and elderly
+seq_adult_elderly <- seq(228, 1308-adult_elderly_interval, by=adult_elderly_interval)
+for (i in seq_adult_elderly){
+  age_ranges <- replace_age_range(age_ranges, i, seq_adult_elderly, adult_elderly_interval)
+}
+
+age_ranges_labels <- mapply(age_range_as_label, age_ranges)
+```
+
+#manipulate metadata table
+```{r}
+convert_range <- function(val, age_ranges) {
+  values <- str_split(val, "-")
+  # If we have an age range
+  if(length(values) == 2) {
+    values <- as.double(values)
+    for (age_range in age_ranges){
+      if (values[1] >= age_range[1] && values[1] < age_range[2] && 
+          values[2] >= age_range[1] && values[2] < age_range[2]) {
+        return(age_range_as_label(age_range))
+      }
+    }
+  }
+  
+  # if the age range didn't fit into any category it returns the age interval itself
+  if(str_detect(val, "-")) {return(val)}
+  
+  # Assume that anything at this point is a number
+  dval <- as.double(val)
+  # If the value is not a number return whatever was there to begin with
+  if(is.na(dval)) {stop(paste0("Unexpected value in specified column (Age_months?)", " '", val, "'"))}
+  # from this point onwards only numbers should remain
+  for (age_range in age_ranges){
+    if (dval >= age_range[1] && dval < age_range[2]) {
+      return(age_range_as_label(age_range))
+    }
+  }
+  return(dval)
+}
+
+convert_to_ranges <- function(age_months, age_ranges){
+  mapply(convert_range, age_months, MoreArgs=list(age_ranges=age_ranges))
+}
+
+metadata_file_age_ranges <- metadata_file2 %>% 
+  mutate(age_plot_range = convert_to_ranges(Age_months, age_ranges),
+         age_plot_range = case_when(
+           #merge in >79yrs
+           (age_plot_range == "948_1068M") ~ ">948M", 
+           (age_plot_range == "1068_1188M") ~ ">948M",
+           (age_plot_range == "1188_1308M") ~ ">948M",
+           #merge 10-19 yrs
+           (age_plot_range == "120_156M") ~ "120_228M",
+           (age_plot_range == "156_192M") ~ "120_228M",
+           (age_plot_range == "192_228M") ~ "120_228M",
+           #keep other age categories unchanged
+           TRUE ~ age_plot_range))
+
+metadata_file_age_ranges.tmp <- metadata_file_age_ranges %>% 
+  filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes") %>% 
+  mutate(cdiff_bool = ifelse(Cdiff=="Yes", TRUE, FALSE))
+```
+
+#Get prevalence data divided by health status
+```{r}
+get_prevalence <- function(data.input, status) {
+    data.input %>%
+    filter(Status == status & str_detect(age_plot_range, "-") == FALSE) %>% 
+    group_by(age_plot_range) %>% 
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total), Status = status)
+}
+
+partial_healthy <- get_prevalence(metadata_file_age_ranges.tmp, "Healthy")
+partial_diseased <- get_prevalence(metadata_file_age_ranges.tmp, "Diseased")
+table.plot.status <- rbind(partial_healthy, partial_diseased)
+
+table.plot.status <- table.plot.status %>% 
+  mutate(point_size = case_when(
+             (total>=5 & total<50) ~ 1, 
+             (total>=50 & total<100) ~ 2,
+             (total>=100 & total<500) ~ 3,
+             (total>=500) ~ 3,
+             #less than n=5 observations supporting the group
+             TRUE ~ 0))
+```
+
+#Plot prevalence data divided by status
+```{r}
+
+# kicks out data groups supported by less the n=5 observations (of total samples)
+table.plot.status <- table.plot.status %>% 
+  filter(point_size != 0)
+
+colors <- c('#5e3c99','#e66101')
+
+readable_age_label <- c("0-1 mos","1-2 mos","2-4 mos","4-6 mos","6-8 mos","8-10 mos","10-12 mos","1-4 yrs","4-7 yrs","7-10 yrs","10-19 yrs","19-29 yrs","29-39 yrs","39-49 yrs","49-59 yrs","59-69 yrs","69-79 yrs",">79 yrs")
+
+p1 <- ggplot(data=table.plot.status, aes(x=factor(age_plot_range, levels = c("0_1M","1_2M","2_4M","4_6M","6_8M","8_10M","10_12M","12_48M","48_84M","84_120M","120_228M","228_348M","348_468M","468_588M","588_708M","708_828M","828_948M",">948M")), y=percentages, group=Status)) +
+  geom_line(aes(color=Status), size = 2) +
+  scale_color_manual(values=colors) +
+  geom_point(pch = 21, color="black", stroke = 2, aes(fill=Status, size = as.factor(point_size))) + 
+  scale_fill_manual(values=colors) +
+  scale_size_discrete(labels=c("5 \u2264 N. samples < 50", "50 \u2264 N. samples < 100", "100 \u2264 N. samples < 500", "N. samples \u2265  500")) +
+  scale_x_discrete(labels= readable_age_label) +
+  labs(x="Age groups", y = "Prevalence (%)")+
+  theme_bw() +
+  theme(plot.title = element_text(family = "Helvetica", face = "bold", size = size_text), 
+       axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0),
+       axis.title.x = element_text(size= size_text),
+      axis.title.y = element_text(size= size_text)) +
+  guides(fill=FALSE) +
+  theme(legend.title = element_blank(),
+  legend.text = element_text(size = size_text)) +
+  theme(
+    legend.position = c(.95, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6)
+    ) +
+  ylim(0,100)
+
+p1
+
+```
+
+#Get prevalence data divided by health status and delivery mode
+```{r}
+metadata_file_age_ranges.tmp.pooled <- metadata_file_age_ranges.tmp %>% 
+  mutate(age_plot_range = case_when(
+           #merge first semester
+           (age_plot_range == "1_2M") ~ "1_6M", 
+           (age_plot_range == "2_4M") ~ "1_6M",
+           (age_plot_range == "4_6M") ~ "1_6M",
+           #merge second semester
+           (age_plot_range == "6_8M") ~ "6_12M",
+           (age_plot_range == "8_10M") ~ "6_12M",
+           (age_plot_range == "10_12M") ~ "6_12M",
+           #keep other age categories unchanged
+           TRUE ~ age_plot_range))
+
+get_prevalence <- function(data.input, status, deliveryMode) {
+    data.input %>%
+    filter(Delivery_mode == deliveryMode & Status == status & str_detect(age_plot_range, "-") == FALSE & (Age_group == "Infant" | Age_group == "Child")) %>% 
+    group_by(age_plot_range) %>% 
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total), status_delivery = paste0(status," ", deliveryMode))
+}
+
+partial_healthy_vaginal <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "Vaginal")
+partial_healthy_cesarean <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "Cesarean")
+partial_diseased_vaginal <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "Vaginal")
+partial_diseased_cesarean <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "Cesarean")
+table.plot.delivery <- rbind(partial_healthy_vaginal, partial_healthy_cesarean, partial_diseased_vaginal, partial_diseased_cesarean)
+
+to_not_plot <- c("48_84M", "84_120M","120_156M","156_192M","192_228M","228_348M","348_468M","468_588M","588_708M","708_828M","828_948M","948_1068M","1068_1188M","1188_1308M")
+`%!in%` = Negate(`%in%`)
+
+table.plot.delivery <- table.plot.delivery %>%
+  filter(age_plot_range %!in% to_not_plot) %>% 
+  #calculate percentage of prevalence
+  mutate(point_size = case_when(
+             (total>=5 & total<50) ~ 1, 
+             (total>=50 & total<100) ~ 2,
+             (total>=100 & total<500) ~ 3,
+             (total>=500) ~ 3,
+             #less than n=5 observations supporting the group
+             TRUE ~ 0))
+```
+
+
+#Plot prevalence data divided by health status and delivery mode 
+```{r}
+colors <- c('#5e3c99', '#b2abd2', '#fdb863', '#e66101')
+readable_age_label <- c("0-1 mos","1-6 mos","6-12 mos","1-4 yrs")
+
+table.plot.delivery <- table.plot.delivery %>% 
+  filter(point_size != 0)
+
+p2 <- ggplot(data=table.plot.delivery, aes(x=factor(age_plot_range, levels = c("0_1M","1_6M","6_12M", "12_48M")), y=percentages, group=status_delivery)) +
+  geom_line(aes(color=status_delivery), size = 2) +
+  scale_color_manual(values=colors) +
+  geom_point(pch = 21, color="black", stroke = 2, aes(fill=status_delivery, size = as.factor(point_size)), show.legend = FALSE) + 
+  scale_fill_manual(values=colors) +
+  labs(x="Age groups", y = "Prevalence (%)")+
+  theme_bw() +
+  guides(fill=FALSE) +
+  theme(legend.title = element_blank(),
+        legend.text = element_text(size = size_text),
+        axis.title.x = element_text(size= size_text),
+        axis.title.y = element_text(size= size_text)) +
+  ylim(0,100) +
+  scale_x_discrete(labels= readable_age_label) +
+  theme(
+    legend.position = c(.95, .25),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6)
+    )
+
+p2
+```
+
+
+#Get prevalence data divided by health status and prematurity
+```{r}
+get_prevalence <- function(data.input, status, prematurity) {
+    data.input %>%
+    filter(Premature == prematurity & Status == status & str_detect(age_plot_range, "-") == FALSE & (Age_group == "Infant" | Age_group == "Child")) %>% 
+    group_by(age_plot_range) %>% 
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total), status_prematurity = paste0(status,"_Premature", prematurity))
+}
+
+partial_healthy_premature <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "Yes")
+partial_healthy_atTerm <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "No")
+partial_diseased_premature <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "Yes")
+partial_diseased_atTerm <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "No")
+table.plot.prematurity <- rbind(partial_healthy_premature, partial_healthy_atTerm, partial_diseased_premature, partial_diseased_atTerm)
+
+to_not_plot <- c("48_84M", "84_120M","120_156M","156_192M","192_228M","228_348M","348_468M","468_588M","588_708M","708_828M","828_948M","948_1068M","1068_1188M","1188_1308M")
+`%!in%` = Negate(`%in%`)
+
+table.plot.prematurity <- table.plot.prematurity %>%
+  filter(age_plot_range %!in% to_not_plot) %>% 
+  #calculate percentage of prevalence
+  mutate(point_size = case_when(
+             (total>=5 & total<50) ~ 1, 
+             (total>=50 & total<100) ~ 2,
+             (total>=100 & total<500) ~ 3,
+             (total>=500) ~ 3,
+             #less than n=5 observations supporting the group
+             TRUE ~ 0),
+         prematurity_labels = case_when(
+             (status_prematurity=="Healthy_PrematureYes") ~ "Healthy pre-term", 
+             (status_prematurity=="Healthy_PrematureNo") ~ "Healthy full-term", 
+             (status_prematurity=="Diseased_PrematureYes") ~ "Diseased pre-term", 
+             TRUE ~ "Diseased full-term"),
+         prematurity_labels = fct_relevel(prematurity_labels, 
+                                          "Diseased full-term", "Diseased pre-term", "Healthy pre-term", "Healthy full-term"))
+```
+
+
+#Plot prevalence data divided by health status and prematurity 
+```{r}
+readable_age_label <- c("0-1 mos","1-6 mos","6-12 mos","1-4 yrs")
+
+table.plot.prematurity <- table.plot.prematurity %>% 
+  filter(point_size != 0)
+
+p3 <- ggplot(data=table.plot.prematurity, aes(x=factor(age_plot_range, levels = c("0_1M","1_6M","6_12M", "12_48M")), y=percentages, group=prematurity_labels)) +
+  geom_line(aes(color=prematurity_labels), size = 2) +
+  scale_color_manual(values=colors) +
+  geom_point(pch = 21, color="black", stroke = 2, aes(fill=prematurity_labels, size = as.factor(point_size)), show.legend = FALSE) + 
+  scale_fill_manual(values=colors) +
+  labs(x="Age groups", y = "Prevalence (%)")+
+  theme_bw() +
+  guides(fill=FALSE) +
+  theme(legend.title = element_blank(), 
+        axis.title.x = element_text(size= size_text),
+        axis.title.y = element_text(size= size_text)) +
+  ylim(0,100) +
+  scale_x_discrete(labels= readable_age_label) +
+  theme(
+    legend.position = c(.95, .25),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6)
+    )
+p3
+```
+
+#Get prevalence data divided by feeding mode
+```{r}
+get_prevalence <- function(data.input, feedingMode) {
+    data.input %>%
+    filter(diet == feedingMode & str_detect(age_plot_range, "-") == FALSE & (Age_group == "Infant" | Age_group == "Child")) %>% 
+    filter(!is.na(diet), age_plot_range != "6_8M", age_plot_range != "8_10M", age_plot_range != "10_12M", age_plot_range != "12_48M") %>%
+    mutate(age_plot_range = case_when(
+      #only 0-1 and 1-6 months
+      (age_plot_range == "0_1M") ~ "0_1M", 
+      TRUE ~ "1_6M")) %>% 
+    group_by(age_plot_range) %>% 
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total), diet = feedingMode)
+}
+
+partial_breastFed <- get_prevalence(metadata_file_age_ranges.tmp, "exclusively breastfed")
+partial_bottle <- get_prevalence(metadata_file_age_ranges.tmp, "exclusively bottlefed")
+partial_mixed <- get_prevalence(metadata_file_age_ranges.tmp, "mixed_bottlefed_breastfed")
+table.plot <- rbind(partial_breastFed, partial_bottle, partial_mixed)
+
+#calculate prevalence percentage
+table.plot.diet <- table.plot %>% 
+  mutate(point_size = case_when(
+             (total>=5 & total<50) ~ 1, 
+             (total>=50 & total<100) ~ 2,
+             (total>=100 & total<500) ~ 3,
+             (total>=500) ~ 3,
+             #less than n=5 observations supporting the group
+             TRUE ~ 0),
+  diet_labels = case_when(
+             (diet=="exclusively breastfed") ~ "Exclusive breast milk", 
+             (diet=="exclusively bottlefed") ~ "Exclusive formula", 
+             TRUE ~ "Mixed"))
+```
+
+
+#Plot prevalence data divided by feeding mode
+```{r}
+colors <- c('#b2df8a', '#1f78b4', '#a6cee3')
+readable_age_label <- c("0-1 mos","2-6 mos")
+
+table.plot.diet <- table.plot.diet %>% 
+  filter(point_size != 0)
+
+p4 <- ggplot(data=table.plot.diet, aes(x=age_plot_range, y=percentages, group=diet_labels)) +
+  geom_line(aes(color=diet_labels), size = 2) +
+  scale_color_manual(values=colors) +
+  geom_point(pch = 21, color="black", stroke = 2, aes(fill=diet_labels, size = as.factor(point_size)), show.legend = FALSE) + 
+  scale_fill_manual(values=colors) +
+  labs(x="Age groups", y = "Prevalence (%)")+
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=0)) +
+  guides(fill=FALSE) +
+  theme(legend.title = element_blank(),
+        axis.title.x = element_text(size= size_text),
+        axis.title.y = element_text(size= size_text)) +
+  ylim(0,100) +
+  scale_x_discrete(labels= readable_age_label) +
+  theme(
+    legend.position = c(.95, .25),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6)
+    )
+p4
+```
+
+#Plot prevalence data divided by health, gestational age AND delivery mode
+```{r}
+colors <- c( '#1f78b4','navy', 'aquamarine4', 'aquamarine1', 'goldenrod1', 'darkorange', "darkred", "black")
+readable_age_label <- c("0-1 mos","1-6 mos","6-12 mos","1-4 yrs")
+
+get_prevalence <- function(data.input, status, prematurity, deliveryMode) {
+    data.input %>%
+    filter(Status == status & Delivery_mode == deliveryMode & Premature == prematurity & str_detect(age_plot_range, "-") == FALSE & (Age_group == "Infant" |Age_group == "Child")) %>% 
+    group_by(age_plot_range) %>% 
+    dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>% 
+    mutate(prematurity_expanded = ifelse(prematurity=="Yes", "Pre-term","full-term")) %>% 
+    mutate(percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total), term_mode = paste0(status, "_", prematurity_expanded,"_", deliveryMode))
+}
+
+partial_hfullterm_vag <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "No", "Vaginal" )
+partial_hfullterm_csec <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "No", "Cesarean")
+partial_hpreterm_vag <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "Yes", "Vaginal")
+partial_hpreterm_csec <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Healthy", "Yes", "Cesarean")
+partial_dfullterm_vag <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "No", "Vaginal" )
+partial_dfullterm_csec <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "No", "Cesarean")
+partial_dpreterm_vag <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "Yes", "Vaginal")
+partial_dpreterm_csec <- get_prevalence(metadata_file_age_ranges.tmp.pooled, "Diseased", "Yes", "Cesarean")
+
+table.plot.term.deliveryMode <- rbind(partial_hfullterm_vag, partial_hfullterm_csec, partial_hpreterm_vag, partial_hpreterm_csec,
+                                      partial_dfullterm_vag, partial_dfullterm_csec, partial_dpreterm_vag, partial_dpreterm_csec)
+
+table.plot.term.deliveryMode <- table.plot.term.deliveryMode %>% 
+  #calculate percentage of prevalence
+  mutate(point_size = case_when(
+             (total>=5 & total<50) ~ 1, 
+             (total>=50 & total<100) ~ 2,
+             (total>=100 & total<500) ~ 3,
+             (total>=500) ~ 3,
+             #less than n=5 observations supporting the group
+             TRUE ~ 0))
+
+table.plot.term.deliveryMode <- table.plot.term.deliveryMode %>% 
+  filter(point_size != 0)
+
+combinations <- ggplot(data=table.plot.term.deliveryMode, aes(x=factor(age_plot_range, levels = c("0_1M","1_6M","6_12M", "12_48M")), y=percentages, group=term_mode)) +
+  geom_line(aes(color=term_mode), size = 2) +
+  scale_color_manual(values=colors) +
+  geom_point(pch = 21, color="black", stroke = 2, aes(fill=term_mode, size = as.factor(point_size)), show.legend = FALSE) + 
+  scale_fill_manual(values=colors) +
+  labs(x="Age groups", y = "Prevalence (%)")+
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=0)) +
+  guides(fill=FALSE) +
+  theme(legend.title = element_blank(),
+        axis.title.x = element_text(size= size_text),
+        axis.title.y = element_text(size= size_text)) +
+  ylim(0,100) 
+
+pdf(file="../../figures/prevalence_Cdiff/prevalence_combinations.pdf", width=10, height=6)
+combinations
+dev.off()
+
+```
+
+#grouped barplot for geography (latest version)
+```{r}
+
+map.tmp <- metadata_file %>%
+  filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes" & Geography != "NA") %>%
+  mutate(cdiff_bool = ifelse(Cdiff=="Yes", TRUE, FALSE))
+
+map.tmp.all <- map.tmp %>%
+  filter((Age_group == "Infant" | Age_group == "Adult") & Status == "Healthy") %>%
+  group_by(Geography, Continent, Age_group) %>%
+  mutate(Age_group= fct_relevel(Age_group, "Infant", "Adult")) %>% 
+  dplyr::summarise(total = n(), cdiffPos = sum(cdiff_bool)) %>%
+  mutate(percentages = ifelse(is.na(cdiffPos), 0, 100*cdiffPos/total)) %>% 
+  filter(as.numeric(percentages)>1) %>% 
+  ungroup() %>% 
+  group_by(Continent, Age_group) %>%
+  mutate(sum_continent= sum(percentages)) %>% 
+  ungroup()
+
+means <- map.tmp.all %>% group_by(Continent) %>% summarise(mean=mean(percentages))
+
+geo_infants <- ggplot(data=map.tmp.all %>% filter(Age_group=="Infant"), 
+       aes(x=reorder(Geography, -sum_continent), y=percentages, fill=Continent)) +
+  geom_bar(stat="identity", color="#444444") +
+  geom_text(aes(label=total), vjust=-0.3, color="black", size=3, position = "dodge") +
+  geom_text(aes(label=paste0(round(percentages, digits = 1), "%")), 
+            vjust=1.4, color="black", size=3, position = "dodge") +
+  labs(y = "Prevalence C. difficile (%)")+
+  theme_bw() +
+  theme(text = element_text(size=12),
+        axis.title.x=element_blank()) +
+  ylim(0,100)+
+  theme(legend.position = "none")
+geo_infants
+
+geo_adults <- ggplot(data=map.tmp.all %>% filter(Age_group=="Adult"), 
+       aes(x=reorder(Geography, -sum_continent), y=percentages, fill=Continent)) +
+  geom_bar(stat="identity", color="#444444") +
+  geom_text(aes(label=total), vjust=-0.3, color="black", size=3, position = "dodge") +
+  geom_text(aes(label=paste0(round(percentages, digits = 1), "%")), 
+            vjust=1.4, color="black", size=3, position = "dodge") +
+  labs(y = "Prevalence C. difficile (%)")+
+  theme_bw() +
+  theme(text = element_text(size=12),
+        axis.title.x=element_blank()) +
+  ylim(0,100)+
+  theme(legend.position = "none") 
+
+pdf(file="../../figures/prevalence_Cdiff/prevalence_geography.pdf", width=11, height=4)
+grid.arrange(geo_infants, geo_adults, widths = c(0.5, 0.18), heights = c(1.0, 0.1))
+dev.off()
+
+
+```
+
+
+#create merged panel of plots
+```{r}
+pdf(file="../../figures/prevalence_Cdiff/figure_4.pdf", width=10, height=8)
+grid.arrange(p0, p1,                                    # bar plot spanning two columns
+             p2, p3, p4,                              # box plot and scatter plot
+             ncol = 5, nrow = 2, 
+             layout_matrix = rbind(c(1,1,1,1,0), c(2,2,3,3,4)))
+dev.off()
+```

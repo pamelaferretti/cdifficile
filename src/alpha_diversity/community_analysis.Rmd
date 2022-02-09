@@ -1,0 +1,458 @@
+---
+title: "Species richness and evenness calculations"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load tidyverse first
+library(tidyverse)
+library(vegan)
+library(ggpubr)
+library(gridExtra)
+library(grid)
+library("coin")
+```
+
+#Load mOTU counts table
+```{r }
+count_table<-read.csv("../../data/mOTU_counts.tsv", sep = '\t', row.names=1)
+```
+
+#filter counts table
+```{r}
+# remove -1 (unclassified) line
+count_table <- count_table[setdiff(rownames(count_table), "-1"), ]
+
+#remove species that never occurr across all samples
+count_table_filtered <- count_table[rowSums(count_table) > 0, ]
+count_table_filtered_t<-data.frame(t(count_table_filtered))
+```
+
+#load metadata table (after timeseries dereplication)
+```{r}
+meta.data<-read.csv("../../data/metadata_timeseries_dereplicated.csv", sep = ',', stringsAsFactors=F)
+rownames(meta.data) <- as.character(meta.data$Samples)
+```
+
+#Calculate alpha diversity
+```{r }
+filename1 <- "alpha_diversity.R"
+filename2 <- "rarefaction.R"
+
+#download R scripts sourced if they are not already present
+if ((!file.exists(filename1)) | (!file.exists(filename2))) {
+  dir.create(path = "external_scripts")
+  download.file(url = "https://raw.githubusercontent.com/defleury/Toolbox_16S/master/R/function.alpha_diversity.R", destfile = "external_scripts/alpha_diversity.R")
+  download.file(url = "https://raw.githubusercontent.com/defleury/Toolbox_16S/master/R/function.rarefaction.R", destfile = "external_scripts/rarefaction.R")
+}
+
+source("external_scripts/alpha_diversity.R")
+source("external_scripts/rarefaction.R")
+
+#get as R object the alpha diversity results of already computed. 
+filename <- "../../data/alpha_diversity/HillDiv_counts_withMetadata.rds"
+
+if (file.exists(filename)) {
+  alpha.frame.m <- readRDS(file = filename)
+} else {
+    
+  #Calculate rarefied alpha diversities
+  #on an entire count table (taxa as rows, samples as columns) of absolute (!) counts - estimated time for denovo calculation 40min
+  #alpha div measures are replaced by NA for undersampled samples (see script)
+  alpha.frame <- Hill_Diversity.rarefied(
+    count_table_filtered, 
+    size=100, # min 100 reads per sample
+    iterations=100, 
+    q.H=c(0, 1, 2) #Hill's numbers
+    )
+  
+  colnames(alpha.frame) = c("Sample", "Richness", "exp_Shannon", "inv_Simpson") 
+  #calculate evenness as exp(Shannon)/Richness
+  alpha.frame[, "evenness (q1)"] <- alpha.frame$exp_Shannon/ alpha.frame$Richness
+  colnames(alpha.frame) = c("Sample", "Richness", "exp_Shannon", "inv_Simpson", "evenness") 
+  
+  alpha.frame <- alpha.frame[-c(6)]
+  rownames(alpha.frame) <- as.character(alpha.frame$Sample)
+  
+  #Append metadata to alpha diversity results table
+  alpha.frame.m <- cbind(meta.data, alpha.frame[rownames(meta.data), ])
+
+  #save as rds object the result of the alpha diversity calculation
+  saveRDS(alpha.frame.m, file = filename)
+}
+```
+
+#remove NA from alpha div values (from undersampled samples)
+```{r}
+alpha.frame.m <- alpha.frame.m %>% 
+  filter(is.na(Richness)==FALSE)
+```
+
+#function to count number of samples per each boxplot
+```{r}
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+```
+
+#define color palette and text size
+```{r}
+size_text = 10
+age_colors <- c("#01579B", "#F9A825")
+```
+
+
+#Combined plots on alpha diversity across age groups and health status
+```{r}
+library(ggpubr)
+library(rstatix)
+
+#plotting function
+create_boxplot_grid_age <- function(input.data, x, y, cdiff, status){
+    ggplot(data = input.data, mapping = aes(x = !!as.name(x), y = !!as.name(y), fill = !!as.name(cdiff))) +
+    geom_boxplot(outlier.size = -1, position = position_dodge(preserve = "single")) +
+    geom_jitter(position=position_jitterdodge(jitter.width=0.25), alpha = 0.1, size = 0.05) +
+    theme_bw() +
+    labs(x="Age group", y = y)+
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          #axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0), 
+          strip.background = element_rect(color="white", fill="white"), 
+          axis.title.x = element_text(size= size_text),
+          axis.title.y = element_text(size= size_text)) +
+    facet_grid(cols = vars(factor(!!as.name(status), levels = c("Healthy", "Diseased"))))+
+    scale_fill_manual(values = age_colors) +
+    stat_compare_means(aes(group = !!as.name(cdiff)), label = "p.signif") +
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+}
+
+#select human gut stool representative samples, for which age group AND status are known, which studies have at least 2 cdiff+ samples
+alpha.frame.m.filtered <- alpha.frame.m %>% 
+  filter(Host == "Human" & Environment == "Gut" & Gut_sample_type == "Stool" & final_representative == "Yes") %>% 
+  filter(!is.na(Age_group) & !is.na(Status)) %>% 
+  #relevel BEFORE grouping
+  mutate(Age_group = fct_relevel(Age_group, "Infant", "Child", "Adolescent", "Adult", "Elderly")) %>% 
+  group_by(Study) %>% 
+  #condition on at least 2 cdiff+ sample has to be AFTER other conditions are met
+  dplyr::mutate(atLeastTwoPosCdiff = sum(Cdiff=="Yes")>1) %>% 
+  filter(atLeastTwoPosCdiff == TRUE) %>% 
+  mutate(age_status_cdiff = paste0(Age_group, "_", Status, "_", Cdiff)) %>% 
+  ungroup() %>% 
+  group_by(age_status_cdiff) %>% 
+  #condition on min samples per boxplot to show it
+  dplyr::mutate(n_perBoxplot = dplyr::n()) %>% 
+  filter(n_perBoxplot >3) %>% #threhsold of min 3 samples per boxplot
+  ungroup()
+
+#non paired t-test 
+stat.test <- compare_means(Richness ~ Cdiff, data = alpha.frame.m.filtered,
+              group.by = "Age_group", method = "t.test")
+
+#adjusted p values (as stat_compare_means provides only p-value significance)
+stat.test <- alpha.frame.m.filtered %>%
+  filter(Status=="Healthy" & Age_group=="Infant") %>% 
+  #group_by(Status, Cdiff) %>%
+  t_test(Richness ~ Cdiff) %>%
+  adjust_pvalue(method = "bonferroni") %>%
+  add_significance("p.adj")
+stat.test
+
+#plot richness
+p1 <- create_boxplot_grid_age(alpha.frame.m.filtered, "Age_group", "Richness", "Cdiff",  "Status")
+
+#plot Evenness (for suppl.)
+p2 <- create_boxplot_grid_age(alpha.frame.m.filtered, "Age_group", "evenness", "Cdiff", "Status") 
+
+pdf(file="../../figures/alpha_diversity/richness_age.pdf", width=8, height=3)
+grid.arrange(p1, nrow = 1)
+dev.off()
+```
+
+#alpha diversity across age groups and health status - blocked by Study
+```{r}
+alpha.frame.m.filtered$Study <- as.factor(alpha.frame.m.filtered$Study)
+alpha.frame.m.filtered$Cdiff <- as.factor(alpha.frame.m.filtered$Cdiff)
+
+age_group_list <- c("Infant", "Child", "Adolescent", "Adult", "Elderly")
+status_list <- c("Healthy", "Diseased")
+
+p.val_vector <- c()
+collect.result <- data.frame()
+
+for (age in age_group_list) {
+  for  (status in status_list) {
+
+    if((age == "Adolescent"  | age == "Elderly") & status == "Healthy") {next} #not enough data
+    print(age)
+    print(status)
+    
+    (subset <- alpha.frame.m.filtered %>%
+      filter(Age_group == age & Status == status) %>%
+      group_by(Study) %>%
+      dplyr::mutate(n= dplyr::n()) %>%
+      filter(n > 1) %>% #filter out studies with less than 2 samples
+      ungroup())
+
+    #y is richness, x are CDI vs control, blocking by study
+    p.val <- pvalue(coin::wilcox_test(Richness ~ Cdiff | Study, data=subset))
+    p.val_vector <- c(p.val_vector, p.val)
+    print(p.val)
+    print("****")
+
+    collect.result <- rbind(collect.result, data.frame(age_group = age, status = status, pvalue = p.val))
+  }
+}
+```
+
+# Combined plots on alpha diversity across delivery mode and health status 
+```{r}
+#plotting function
+create_boxplot_grid_birthMode_prematurity <- function(input.data, x, y, cdiff, status_term){
+ggplot(data = input.data, mapping = aes(x = !!as.name(x), y = !!as.name(y), fill = !!as.name(cdiff))) +
+    geom_boxplot(outlier.size = -1) +
+    theme_bw() +
+    labs(x="Delivery mode", y = y)+
+    theme(strip.background = element_rect(color="white", fill="white"),
+          axis.title.x = element_text(size= size_text),
+          axis.title.y = element_text(size= size_text)) +
+    facet_grid(cols = vars(factor(!!as.name(status_term), levels = c("Premature_Healthy", "Premature_Diseased", "Full-Term_Healthy", "Full-Term_Diseased")))) +
+    scale_fill_manual(values = age_colors) +
+    stat_compare_means(aes(group = !!as.name(cdiff)), label = "p.signif")+
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+}
+
+#select human gut stool representative samples from PREMATURE babies, for which age group AND status are known, which studies have at least 2 cdiff+ samples
+alpha.frame.m.filtered.birth.mode.premature <- alpha.frame.m %>% 
+  filter(Host == "Human" & Environment == "Gut" & Gut_sample_type == "Stool" & final_representative == "Yes" & Age_group == "Infant") %>% 
+  filter(!is.na(Delivery_mode) & !is.na(Status) & !is.na(Premature)) %>% 
+  mutate (Premature_extended = ifelse(Premature == "Yes", "Premature", "Full-Term"),
+          #relevel BEFORE grouping
+          Delivery_mode = fct_relevel(Delivery_mode, "Vaginal", "Cesarean")) %>% 
+  group_by(Study) %>% 
+  #condition on at least 2 cdiff+ sample has to be AFTER other conditions are met
+  dplyr::mutate(atLeastTwoPosCdiff = sum(Cdiff=="Yes")>1) %>% 
+  filter(atLeastTwoPosCdiff == TRUE) %>% 
+  mutate(status_term = paste0(Premature_extended, "_", Status))
+
+stat.test <- compare_means(
+ Richness ~ Delivery_mode, data = alpha.frame.m.filtered.birth.mode.premature,
+ method = "t.test"
+)
+
+#plot richness
+p3 <- create_boxplot_grid_birthMode_prematurity(alpha.frame.m.filtered.birth.mode.premature, 
+                                                "Delivery_mode", "Richness", "Cdiff", "status_term")
+
+#plot Evenness
+p4 <- create_boxplot_grid_birthMode_prematurity(alpha.frame.m.filtered.birth.mode.premature, 
+                                                "Delivery_mode", "evenness", "Cdiff","status_term")
+
+#plot exp_Shannon
+p5 <- create_boxplot_grid_birthMode_prematurity(alpha.frame.m.filtered.birth.mode.premature, 
+                                                "Delivery_mode", "exp_Shannon", "Cdiff", "status_term")
+
+a <- alpha.frame.m %>% 
+  filter(Host == "Human" & Environment == "Gut" & Gut_sample_type == "Stool" & final_representative == "Yes" & Age_group == "Infant") %>% 
+  filter(Status=="Diseased" & Premature=="No")
+```
+
+#alpha diversity across prematurity and delivery mode - blocked by Study
+```{r}
+alpha.frame.m.filtered.birth.mode.premature$Study <- as.factor(alpha.frame.m.filtered.birth.mode.premature$Study)
+alpha.frame.m.filtered.birth.mode.premature$Cdiff <- as.factor(alpha.frame.m.filtered.birth.mode.premature$Cdiff)
+
+delivery_mode_list <- c("Vaginal", "Cesarean")
+status_term_list <- c("Premature_Healthy", "Premature_Diseased", "Full-Term_Healthy")
+
+collect.result.delivery.term <- data.frame()
+
+for (delivery_mode in delivery_mode_list) {
+  for  (status_term in status_term_list) {
+
+    subset <- alpha.frame.m.filtered.birth.mode.premature %>%
+      filter(Delivery_mode == delivery_mode & status_term == status_term) %>%
+      group_by(Study) %>%
+      dplyr::mutate(n= dplyr::n()) %>%
+      filter(n > 1) %>% #filter out studies with less than 2 samples
+      ungroup()
+
+    #y is richness, x are CDI vs control, blocking by study
+    p.val <- pvalue(coin::wilcox_test(Richness ~ Cdiff | Study, data=subset))
+    p.val_vector <- c(p.val_vector, p.val)
+    print(p.val)
+    print("****")
+
+    collect.result.delivery.term <- rbind(collect.result.delivery.term, data.frame(Delivery_mode = delivery_mode, status_term = status_term, pvalue = p.val))
+  }
+}
+```
+
+#alpha diversity by age groups and by country
+```{r}
+create_boxplot_grid_geography_age <- function(input.data, x, y, cdiff, Age_group){
+ggplot(data = input.data, mapping = aes_string(x = x, y = y, fill = cdiff)) +
+    geom_boxplot(outlier.size = -1) +
+    geom_jitter(position=position_jitterdodge(jitter.width=0.25), alpha = 0.2, size = 0.05) +
+    theme_bw() +
+    labs(x="Continent", y = y)+
+    theme(strip.background = element_rect(color="white", fill="white"), 
+          axis.text.x = element_text(angle=0, vjust=1.0, hjust=1.0), 
+          axis.title.x = element_text(size= size_text),
+          axis.title.y = element_text(size= size_text)) +
+    facet_grid(cols = vars(factor(!!as.name(Age_group), levels = c("Infant")))) +
+    scale_fill_manual(values = age_colors) +
+    stat_compare_means(aes_string(group = cdiff), label = "p.signif")+
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2)
+}
+
+alpha.frame.m.filtered.continentAgeGroups <- alpha.frame.m %>% 
+  filter(Host == "Human" & Environment == "Gut" & Gut_sample_type == "Stool" & final_representative == "Yes") %>% 
+  filter(!is.na(Continent) & Status == "Healthy" & (Age_group == "Infant")) %>% 
+  group_by(Continent, Age_group, Cdiff) %>% 
+  #condition on at least 5 cdiff+ sample has to be AFTER other conditions are met
+  dplyr::mutate(nsamples = dplyr::n()) %>% 
+  filter(nsamples>4 & Continent != "Africa") 
+
+stat.test <- compare_means(Richness ~ Continent, data = alpha.frame.m.filtered.continentAgeGroups, method = "t.test")
+p6 <- create_boxplot_grid_geography_age(alpha.frame.m.filtered.continentAgeGroups, "Continent", "Richness", "Cdiff", "Age_group")
+```
+
+#alpha diversity across continent - blocked by Study
+```{r}
+alpha.frame.m.filtered.continentAgeGroups$Study <- as.factor(alpha.frame.m.filtered.continentAgeGroups$Study)
+alpha.frame.m.filtered.continentAgeGroups$Cdiff <- as.factor(alpha.frame.m.filtered.continentAgeGroups$Cdiff)
+
+age_group_list <- c("Infant")
+continent_list <- c("Asia", "Europe", "North America", "Oceania")
+
+collect.result.continent <- data.frame()
+
+for (age_group in age_group_list) {
+  for  (continent in continent_list) {
+
+    if(age_group == "Adult" & continent == "Oceania") {next} #not enough data
+    print(age_group)
+    print(continent)
+    
+    subset <- alpha.frame.m.filtered.continentAgeGroups %>%
+      filter(Age_group == age_group & Continent == continent) %>%
+      group_by(Study) %>%
+      dplyr::mutate(n= dplyr::n()) %>%
+      filter(n > 1) %>% #filter out studies with less than 2 samples
+      ungroup()
+
+    #y is richness, x are CDI vs control, blocking by study
+    p.val <- pvalue(coin::wilcox_test(Richness ~ Cdiff | Study, data=subset))
+    p.val_vector <- c(p.val_vector, p.val)
+    print(p.val)
+    print("****")
+
+    collect.result.continent <- rbind(collect.result.continent, data.frame(Age_group = age_group, Continent = continent, pvalue = p.val))
+  }
+}
+```
+
+#plot species richness by delivery mode, prematurity and geography + species eveness
+```{r}
+pdf(file="../../figures/alpha_diversity/richness_evenness_suppl.pdf", width=10, height=15)
+grid.arrange(p2, p3, p4, p6, ncol = 1)
+dev.off()
+```
+
+#calculate rarefied species richness across CDI, D-Ctr and H-Ctr samples
+```{r}
+#calculate categories
+colors_2series <- c("darkred", "darkred",'#BDBDBD', "#424242")
+
+metadata_file_CDI_controls <- meta.data %>%
+    filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes" & Status != "NA") %>% 
+  group_by(Study) %>% 
+  dplyr::mutate(atLeastTwoPosCDI = (sum(CDI=="Yes")>1) | (sum(subject_disease_status=="CDI")>1)) %>% 
+  #selected studies to filter out due to their study design or non-CDI samples
+  dplyr::filter(atLeastTwoPosCDI == TRUE & Study != "Draper_2018_FMT_phage" & Study != "Kao_2017_FMT" & subject_disease_status != "UC")
+
+#identify CDI samples
+CDI_CdiffPos <- metadata_file_CDI_controls %>% 
+  filter((subject_disease_status == "CDI" & Status == "Diseased" & Cdiff=="Yes") | (subject_disease_status == "Diarrhoea" & CDI == "Yes" & Status == "Diseased" & Cdiff=="Yes")) %>% 
+  mutate(group = "CDI_CdiffPos")
+
+CDI_CdiffNeg <- metadata_file_CDI_controls %>% 
+  filter((subject_disease_status == "CDI" & Status == "Diseased" & Cdiff=="No") | (subject_disease_status == "Diarrhoea" & CDI == "Yes" & Status == "Diseased" & Cdiff=="No")) %>% 
+  mutate(group = "CDI_CdiffNeg")
+
+#identify CONTROL samples
+
+## diseased controls (D-Ctr)
+DCtr_CdiffPos <- metadata_file_CDI_controls %>% 
+  filter(
+    #diseased subjects without CDI not diarrhea
+    (subject_disease_status != "CDI" & subject_disease_status != "CTR" & subject_disease_status != "Diarrhea" & CDI == "No" & Status == "Diseased" & Cdiff=="Yes") |
+    #diseased subjects without CDI but with diarrhea
+    (subject_disease_status == "Diarrhea" & CDI == "No" & Status == "Diseased"  & Cdiff=="Yes")) %>% 
+  mutate(group = "DCtr_CdiffPos")
+
+DCtr_CdiffNeg <- metadata_file_CDI_controls %>% 
+  filter(
+    #diseased subjects without CDI not diarrhea
+    (subject_disease_status != "CDI" & subject_disease_status != "CTR" & subject_disease_status != "Diarrhea" & CDI == "No" & Status == "Diseased" & Cdiff=="No") |
+    #diseased subjects without CDI but with diarrhea
+    (subject_disease_status == "Diarrhea" & CDI == "No" & Status == "Diseased"  & Cdiff=="No")) %>% 
+  mutate(group = "DCtr_CdiffNeg")
+
+## healthy controls (H-Ctr)
+HCtr_CdiffPos <- metadata_file_CDI_controls %>% 
+  filter(subject_disease_status == "CTR" & CDI == "No" & Status == "Healthy" & Cdiff=="Yes") %>% 
+  mutate(group = "HCtr_CdiffPos")
+
+HCtr_CdiffNeg <- metadata_file_CDI_controls %>% 
+  filter(subject_disease_status == "CTR" & CDI == "No" & Status == "Healthy" & Cdiff=="No") %>% 
+  mutate(group = "HCtr_CdiffNeg")
+
+#Combine and save CDI, D-Ctr and H-Ctr samples
+all_merged <- rbind(CDI_CdiffNeg, CDI_CdiffPos, DCtr_CdiffNeg, DCtr_CdiffPos, HCtr_CdiffNeg, HCtr_CdiffPos) 
+
+group.to.keep <- all_merged %>% 
+  group_by(group) %>% 
+  dplyr::summarise(n=dplyr::n())%>% 
+  filter(n>=5) %>% 
+  pull(group)
+
+all_merged <- all_merged %>% 
+  ungroup() %>% 
+  select(Samples, group) %>% 
+  filter(group %in% group.to.keep)
+
+all_merged.alpha.frame.m <- left_join(all_merged, rownames_to_column(alpha.frame.m), by = c("Samples" = "rowname"))
+
+all_merged.alpha.frame.m$group <- as.factor(all_merged.alpha.frame.m$group)
+all_merged.alpha.frame.m <- all_merged.alpha.frame.m %>% 
+  mutate(group=fct_relevel(group, "CDI_CdiffPos","CDI_CdiffNeg","DCtr_CdiffNeg","HCtr_CdiffNeg"))
+  
+my_comparisons <- list(c("CDI_CdiffPos", "DCtr_CdiffNeg"), 
+  c("CDI_CdiffPos", "HCtr_CdiffNeg"), 
+  c("CDI_CdiffNeg", "DCtr_CdiffNeg"), 
+  c("CDI_CdiffNeg", "HCtr_CdiffNeg"), 
+  c("DCtr_CdiffNeg", "HCtr_CdiffNeg")) 
+
+stat.test <- compare_means(Richness ~ group, data = all_merged.alpha.frame.m, method = "t.test")
+
+pCDI_cdiff<- ggplot(data = all_merged.alpha.frame.m, mapping = aes(x = group, y = Richness, fill=group)) +
+    geom_boxplot(outlier.size = -1) +
+    scale_fill_manual(values=colors_2series) +
+    theme_bw() +
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0, size = 10), 
+          strip.background = element_rect(color="white", fill="white")) +
+    stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=3, angle = 0)
+
+pCDI_cdiff <- pCDI_cdiff + stat_compare_means(comparisons = my_comparisons, label = "p.signif", method = "wilcox.test") 
+
+#plot
+pdf(file="../../figures/alpha_diversity/richness_CDI.pdf", width=5, height=5)
+grid.arrange(pCDI_cdiff, ncol = 1)
+dev.off()
+```
+

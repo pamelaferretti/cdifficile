@@ -1,0 +1,695 @@
+---
+title: "C. diff co-occurrence analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("ggdendro")
+library("reshape2")
+library("grid")
+library(magrittr)
+library("ggrepel")
+library(cowplot)
+```
+
+#Load taxonomic assignment file
+```{r}
+dat.taxonomy <- read_delim("../../data/co-occurrence/assignment_files/motus_taxonomy.taxonomy", "\t", 
+                           escape_double = FALSE, trim_ws = TRUE, col_types=cols(
+  mOTU_name = col_character(),
+  mOTU_ID = col_character(),
+  kingdom = col_character(),
+  phylum = col_character(),
+  class = col_character(),
+  order = col_character(),
+  family = col_character(),
+  genus = col_character(),
+  mOTU = col_character()
+))
+```
+
+#parsing fisher test result files
+```{r}
+min_non_inf <- function(values) {
+  non_infs <- values[is.finite(values)]
+  
+  if (length(non_infs) == 0) {
+    values
+  } else {
+    min(non_infs)
+  }
+}
+
+max_non_inf <- function(values) {
+  non_infs <- values[is.finite(values)]
+  
+  if (length(non_infs) == 0) {
+    values
+  } else {
+    max(non_infs)
+  }
+}
+
+#Fisher test results path
+path_fisher_results <- c("../../data/co-occurrence/Fisher_results/")
+
+#function for filtering and parsing data
+filter_my_data <- function(input_file) {
+  full_name <- paste(path_fisher_results, input_file, ".csv", sep="")
+  
+  tmp <- read_csv(full_name, col_types=cols(
+    species = col_character(),
+    prevalence = col_double(),
+    estimate = col_double(),
+    p.value = col_double(),
+    conf.low = col_double(),
+    conf.high = col_double(),
+    method = col_character(),
+    alternative = col_character(),
+    BH = col_double()
+  )) %>%
+  #Select columns of interest
+  select(species, estimate, p.value, prevalence) %>%
+  #Re-scale p adjustment
+  mutate(p = p.adjust(p.value, method = "BH")) %>%
+  #Log-transform odds ratios 
+  mutate(logOR = log2(estimate))
+  
+  tmp %>%
+  #Re-scale logOR to drop -Inf and Inf values
+  mutate(logOR = ifelse(logOR == -Inf, min_non_inf(logOR), logOR)) %>%
+  mutate(logOR = ifelse(logOR == Inf, max_non_inf(logOR), logOR)) %>%
+  #Log-transform (corrected) p values
+  mutate(logP = -log10(p)) %>%
+  #Re-scale logP to drop Inf
+  mutate(logP = ifelse(logP == Inf, max_non_inf(logOR), logP)) %>%
+  #Mark species with significant signals after FDR correction
+  mutate(significant = ifelse(p < 0.05, "TRUE", "FALSE")) %>%
+  #Add taxonomy info
+  left_join(dat.taxonomy, by = c("species" = "mOTU_name"))
+}
+
+# master cumulative table
+master_allages_status <- filter_my_data("all_merged_abundances_human_gut_stool_reps_resultsBH")
+
+# infant healthy
+dat1 <- filter_my_data("all_merged_abundances_human_gut_stool_infant_healthy_reps_resultsBH")
+# infant diseased
+dat2 <- filter_my_data("all_merged_abundances_human_gut_stool_infant_diseased_reps_resultsBH")
+# child healthy
+dat3 <- filter_my_data("all_merged_abundances_human_gut_stool_child_healthy_reps_resultsBH")
+# not enough samples to include adolescents
+# adult_healthy
+dat4 <- filter_my_data("all_merged_abundances_human_gut_stool_adult_healthy_reps_resultsBH")
+# adult diseased
+dat5 <- filter_my_data("all_merged_abundances_human_gut_stool_adult_diseased_reps_resultsBH")
+# elderly diseased
+dat6 <- filter_my_data("all_merged_abundances_human_gut_stool_elderly_diseased_reps_resultsBH")
+# not enough samples to include healthy elderly subjects
+```
+
+#Merge tables
+```{r}
+dat1.new <- dat1 %>% mutate(status="Healthy") %>% mutate(age_category="Infant")
+dat2.new <- dat2 %>% mutate(status="Diseased") %>% mutate(age_category="Infant") 
+dat3.new <- dat3 %>% mutate(status="Healthy") %>% mutate(age_category="Child")
+dat4.new <- dat4 %>% mutate(status="Healthy") %>% mutate(age_category="Adult")
+dat5.new <- dat5 %>% mutate(status="Diseased") %>% mutate(age_category="Adult")
+dat6.new <- dat6 %>% mutate(status="Diseased") %>% mutate(age_category="Elderly")
+all.data <- bind_rows(list(dat1.new, dat2.new, dat3.new, 
+                           dat4.new, dat5.new, dat6.new)) %>%
+  mutate(logOR = ifelse(logOR == -Inf, min_non_inf(logOR), logOR)) %>%
+  mutate(logOR = ifelse(logOR == Inf, max_non_inf(logOR), logOR))
+
+all.data <- all.data %>% 
+  dplyr::mutate(species = str_remove(species, 'mOTU_v2_')) 
+```
+
+#remove known contaminant species
+```{r}
+all.data <- all.data %>% 
+  filter(species != "Azospirillum sp. CAG:239 [meta_5386]" & species != "Bradyrhizobium sp. BTAi1 [ref_3893]" & species != "Proteus mirabilis [ref_0546]" & species != "Staphylococcus epidermidis [ref_0007]")
+```
+
+#Heatmap with separated health status
+```{r}
+top <- master_allages_status %>% filter(logP > 25) %>% dplyr::mutate(species = str_remove(species, 'mOTU_v2_')) 
+top_species_names <- top$species
+
+#set thresholds
+logOR_limit <- 1
+p_limit <- 0.05
+
+tmp <- all.data %>% filter(species %in% top_species_names) %>%
+         mutate(heat_value=ifelse(p < p_limit & logOR > logOR_limit, "Positive P<0.05",
+                                  ifelse(p < p_limit & logOR < -logOR_limit, "Negative P<0.05",
+                                              ifelse(p >= p_limit & logOR > logOR_limit, "Positive P>=0.05",
+                                                      ifelse(p >= p_limit & logOR < -logOR_limit, "Negative P>=0.05","Neutral")))))
+
+tmp <- tmp %>% mutate(category=paste0(status, " ", age_category)) %>%
+  mutate(heat_value=fct_relevel(heat_value, "Positive P<0.05", "Positive P>=0.05", "Neutral", "Negative P>=0.05", "Negative P<0.05")) %>%
+  mutate(category=fct_relevel(category, 
+                              "Healthy Infant",     
+                              "Healthy Child", 
+                              "Healthy Adult",      
+                              "Diseased Infant",
+                              "Diseased Adult",     
+                              "Diseased Elderly"
+                              ))  
+
+```
+
+#Clustering
+```{r}
+species_to_keep <- unique(filter(tmp, heat_value == "Positive P<0.05")$species)
+
+small_tmp <- tmp %>% 
+  select(species, p, logOR, category) %>% 
+  filter(species %in% species_to_keep)
+
+wide_small_tmp <- small_tmp %>% pivot_wider(names_from = category, values_from = c(p, logOR))
+
+wide_small_tmp.matrix <- as.matrix(select(wide_small_tmp, -species))
+rownames(wide_small_tmp.matrix) <- wide_small_tmp$species
+test.dendro <- as.dendrogram(hclust(d = dist(x = wide_small_tmp.matrix))) %>% 
+  dendextend::ladderize()
+order.species.cdiff <- labels(test.dendro)
+
+filtered_species <- filter(tmp, species %in% species_to_keep)
+dendro.plot <- ggdendrogram(rev(test.dendro), rotate = TRUE, size = 4, labels = FALSE)
+```
+
+#Load metadata table
+```{r}
+metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            unique_subject_id = col_character(),
+                            timepoint = col_double(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character()
+))
+```
+
+#add sample count per health status and age category
+```{r}
+stats_heatmap <- metadata_file %>% 
+  filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes" & !is.na(Age_group) & !is.na(Status)) %>% 
+  mutate(age_status = paste0(Status, "_", Age_group)) %>% 
+  filter(age_status != "Healthy_Elderly" & age_status != "Diseased_Child" & age_status != "Healthy_Adolescent" & age_status != "Diseased_Adolescent") %>% 
+  group_by(age_status) %>% 
+  dplyr::summarise(count = dplyr::n()) 
+
+counts_plot <- ggplot(data=stats_heatmap, aes(x=factor(age_status, levels = c("Healthy_Infant","Healthy_Child","Healthy_Adult","Diseased_Infant","Diseased_Adult","Diseased_Elderly")), y=log10(count))) +
+  geom_point(size = 4, color = "#333333") +
+  labs(x="Status and age category", y = "log10(N. samples)") +
+  theme_bw() +
+  theme(text = element_text(size=12),
+        axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0)) 
+```
+
+#Plot heatmap
+```{r}
+library(gplots)
+library(dendextend)
+
+heatmap_plot <- ggplot(filtered_species, 
+                       aes(x=category, y=species, fill=factor(heat_value))) +
+  geom_tile() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0)) +
+  scale_fill_manual(drop=FALSE, values= c("#e65100","#ffb74d", "white", "#7986CB", "navy"), name="Association with C. difficile") +
+scale_y_discrete(limits=rev(order.species.cdiff))
+```
+
+```{r}
+pdf(file="../../figures/co-occurrence/heatmap_counts.pdf", width=15, height=15)
+plot_grid(heatmap_plot, dendro.plot, counts_plot, NULL,
+          nrow = 2,
+          align = 'h',
+          rel_heights = c(2,0.4),
+          rel_widths = c(1.5,0.3))
+dev.off()
+```
+
+#Generate a volcano plot
+```{r}
+master_allages_status_labelled <- master_allages_status %>% 
+  filter((p < 0.05 & logP > 50 & logOR >0) | (p < 0.05 & logP > 300 & logOR <0))
+
+volcano_plot <- ggplot(master_allages_status %>% filter(prevalence > 0.01),
+       aes(x = logOR, y = logP, colour = significant, alpha = logP, label=species)) +
+  geom_point(size = 3) +
+  geom_point(data=master_allages_status_labelled, aes(x=logOR, y=logP), colour = "#00BCD4", size=3) +
+  geom_text_repel(aes(label=ifelse((p < 0.05 & logP > 50 & logOR >0) | (p < 0.05 & logP > 300 & logOR <0), as.character(species),'')), color = "black", size = 3, alpha = 0.8) +
+  theme_minimal() +
+  guides(colour=FALSE) +
+  scale_colour_manual(values = c("white", "#333333"))
+
+pdf(file="../../figures/co-occurrence/volcano_plot.pdf", width=10, height=10)
+grid.arrange(volcano_plot, nrow = 1)
+dev.off()
+```
+
+```{r}
+filtered_counts.raw <- read.csv("../../data/mOTU_counts.tsv", sep = '\t')
+filtered_counts <- filtered_counts.raw %>% 
+  dplyr::mutate(X = str_remove(X, 'mOTU_v2_')) 
+
+filtered_metadata <-read.csv("../../data/metadata_timeseries_dereplicated.csv", sep = ',', row.names=1, stringsAsFactors=F)
+```
+
+#Get prevalence data divided by health status
+```{r}
+#order y axis is set by factors
+filtered_species$species <- factor(x = filtered_species$species)
+target_species <- levels(filtered_species$species)
+```
+
+#extract multiple mOTUs from master table
+```{r}
+to_keep <- function(fixed_string, text) {
+  #text is the first column in mOTU table (containing species names)
+  #fixed string is the vector of target species
+  stringr::str_detect(text, stringr::fixed(fixed_string))
+}
+
+tmp <- filtered_counts %>% 
+  #first column is named "X" automatically at loading
+  # identify target mOTU clusters
+  dplyr::filter(
+    target_species %>% 
+    #map applies str_detect to all rows
+    purrr::map(~ to_keep(.x, text = X)) %>%
+    #fecth any matching row
+    purrr::pmap_lgl(any)
+  ) %>% 
+  # set sample id as rownames
+  column_to_rownames("X")
+  
+#in order to join with metadata table transposed matrix is necessary (sample ids become row names)
+tmp_t<-as.data.frame(t(tmp))
+
+#add cdiff mOTU counts to metadata table
+joined_table <- left_join(filtered_metadata %>% mutate(Samples = rownames(filtered_metadata)), tmp_t %>%
+                              mutate(Samples = rownames(tmp_t)), by = "Samples")
+
+joined_table.filtered <- joined_table %>%
+    filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" &
+             final_representative=="Yes" & Age_months != "NA")
+```
+
+#define and use age ranges of interest
+```{r}
+infant_interval = 2 #months
+child_adol_interval = 12*3 #3yrs
+adult_elderly_interval = 12*10 #10yrs
+
+age_range_as_label <- function(age_range) {
+  return(paste0(age_range[1], "_", age_range[2], "M"))
+}
+
+replace_age_range <- function(age_ranges, i, sequence, interval) {
+  age_ranges[[length(age_ranges)+ 1]] <- c(i, i+interval)
+  return(age_ranges)
+}
+
+age_ranges <- list()
+#ad hoc age ranges 0-1M and 1-2M
+age_ranges[[length(age_ranges)+ 1]] <- c(0, 1)
+age_ranges[[length(age_ranges)+ 1]] <- c(1, 2)
+
+#infants age ranges defined by equal time intervals
+seq_infant <- seq(2, 12-infant_interval, by=infant_interval)
+for (i in seq_infant){
+  age_ranges <- replace_age_range(age_ranges, i, seq_infant, infant_interval)
+}
+
+#children and adolescents
+#limit is 228 instead of 216 because 228 is the closest multiple available
+seq_child_adol <- seq(12, 228-child_adol_interval, by=child_adol_interval)
+for (i in seq_child_adol){
+  age_ranges <- replace_age_range(age_ranges, i, seq_child_adol, child_adol_interval)
+}
+
+#adults and elderly
+seq_adult_elderly <- seq(228, 1308-adult_elderly_interval, by=adult_elderly_interval)
+for (i in seq_adult_elderly){
+  age_ranges <- replace_age_range(age_ranges, i, seq_adult_elderly, adult_elderly_interval)
+}
+
+age_ranges_labels <- mapply(age_range_as_label, age_ranges)
+
+convert_range <- function(val, age_ranges) {
+  values <- str_split(val, "-")
+  # If we have an age range
+  if(length(values) == 2) {
+    values <- as.double(values)
+    for (age_range in age_ranges){
+      if (values[1] >= age_range[1] && values[1] < age_range[2] && 
+          values[2] >= age_range[1] && values[2] < age_range[2]) {
+        return(age_range_as_label(age_range))
+      }
+    }
+  }
+  
+  # if the age range didn't fit into any category it returns the age interval itself
+  if(str_detect(val, "-")) {return(val)}
+  
+  # Assume that anything at this point is a number
+  dval <- as.double(val)
+  # If the value is not a number return whatever was there to begin with
+  if(is.na(dval)) {stop(paste0("Unexpected value in specified column (Age_months?)", " '", val, "'"))}
+  # from this point onwards only numbers should remain
+  for (age_range in age_ranges){
+    if (dval >= age_range[1] && dval < age_range[2]) {
+      return(age_range_as_label(age_range))
+    }
+  }
+  return(dval)
+}
+
+convert_to_ranges <- function(age_months, age_ranges){
+  #way to avoid using for loop for all age ranges
+  mapply(convert_range, age_months, MoreArgs=list(age_ranges=age_ranges))
+}
+```
+
+#add age ranges and subset the desired columns
+```{r}
+#show first Status column, then age_plot_range than sample name, followed by all target species columns
+cols_to_subset_tmp <- append(as.vector(target_species), "Status", after= 0) 
+cols_to_subset_tmp2 <- append(cols_to_subset_tmp, "age_plot_range", after= 1) 
+cols_to_subset <- append(cols_to_subset_tmp2, "Samples", after= 2) 
+
+#add age_plot_range column and subset columns
+metadata_file_age_ranges <- joined_table.filtered %>% 
+  mutate(age_plot_range = mapply(convert_range, Age_months, MoreArgs=list(age_ranges=age_ranges))) %>% 
+  select(cols_to_subset)
+```
+
+#pivot longer metadata table
+```{r}
+#allows to have all species info on the same table (necessary to plot all species in same plot)
+pivot.long.metadata <- metadata_file_age_ranges %>% 
+  pivot_longer(
+  cols = -c(Status, age_plot_range, Samples),
+  names_to = "Species",
+  values_to = "Abundance"
+)
+```
+
+#Spearman correlation on target species
+```{r}
+pivot.long.metadata$Abundance[is.na(pivot.long.metadata$Abundance)] <- 0
+
+#list of species co-occurring with C. difficile across all ages and health status (orange sector in the heatmap)
+orange.sector <- c("Clostridium cadaveris [ref_2891]",
+"Robinsoniella peoriensis [ref_1234]",
+"Enterococcus sp. [ref_1043]",
+"Clostridium sp. 7_2_43FAA [ref_4288]",
+"Clostridium neonatale [meta_5695]",
+"Clostridium butyricum [ref_0978]",
+"Erysipelotrichaceae sp. [ref_0885]",
+"Enterococcus avium [ref_0599]",
+"Enterobacter sp. [ref_0265]",
+"Finegoldia magna [ref_4423]",
+"Finegoldia magna [ref_1208]",
+"Citrobacter amalonaticus [ref_0042]",
+"Tyzzerella nexilis [ref_4366]",
+"Anaerostipes caccae [ref_1381]",
+"Coprococcus sp. [ref_0303]",
+"Ruminococcus gnavus [ref_0280]",
+"Megasphaera micronuciformis [ref_4840]",
+"Enterococcus sp. [ref_0674]",
+"Blautia producta [ref_1889]",
+"Clostridium innocuum [ref_0643]",
+"Clostridiales bacterium VE202−09 [ref_2688]",
+"Niameybacter massiliensis [meta_7610]",
+"Clostridium paraputrificum [ref_2890]",
+"Anaerococcus obesiensis/vaginalis [ref_0429]",
+"Veillonella dispar [ref_4469]",
+"Veillonella atypica [ref_0561]",
+"unknown Veillonella [meta_5811]",
+"Veillonella parvula [ref_1042]",
+"Streptococcus mitis [ref_0032]",
+"Enterococcus faecalis [ref_0116]",
+"Streptococcus mitis [ref_0028]",
+"Streptococcus pseudopneumoniae [ref_0021]",
+"Streptococcus pneumoniae [ref_0020]",
+"Klebsiella sp. [ref_0160]",
+"Enterococcus faecium [ref_0372]",
+"Clostridium perfringens [ref_1117]",
+"Lactobacillus rhamnosus [ref_0048]",
+"Bifidobacterium breve [ref_0157]",
+"Klebsiella michiganensis/oxytoca [ref_0079]",
+"Citrobacter sp. [ref_0076]")
+
+plot_list = list()
+results_df <- data.frame(matrix(ncol = 4, nrow = 1))
+colnames(results_df) <- c("Species", "Rho", "Pvalue", "Heatmap_sector")
+
+for (i in 1:length(target_species)){
+  
+  partial <- gsub("\\[", "\\\\[", target_species[i])
+  replaced_target <- gsub("\\]", "\\\\]", partial)
+  print(replaced_target)
+
+  get_prevalence <- function(data.input, status, col_ab) {
+        data.input %>%
+        filter((str_detect(age_plot_range, "-") == FALSE) & (Status == status) & Species == target_species[i]) %>% 
+        group_by(Species, age_plot_range) %>%
+        dplyr::summarise(total = dplyr::n(), pos_species = sum(!!as.name(col_ab)>0)) %>% 
+        mutate(percentages = ifelse(is.na(pos_species), 0, 100*pos_species/total), Status = status,  age_plot_range = age_plot_range)
+  }
+  
+  partial_healthy <- get_prevalence(pivot.long.metadata, "Healthy", "Abundance")
+  
+  partial_healthy$age_plot_range <- as.character(partial_healthy$age_plot_range)
+
+  v1 <- c("0_1M","1_2M","2_4M","4_6M","6_8M","8_10M")
+  v2 <- c("10_12M","12_48M","48_84M","84_120M")
+  v3 <- c("120_156M","156_192M","192_228M","228_348M","348_468M","468_588M","588_708M","708_828M","828_948M","948_1068M")
+  v4 <- c("1188_1308M")
+    
+  partial_healthy <- partial_healthy %>% 
+    mutate(age_plot_range = fct_relevel(age_plot_range,"0_1M","1_2M","2_4M","4_6M","6_8M","8_10M","10_12M","12_48M","48_84M","84_120M","120_156M","156_192M","192_228M","228_348M","348_468M","468_588M","588_708M","708_828M","828_948M","948_1068M", "1188_1308M"),
+           order_age_ranges = ifelse(age_plot_range %in% v1, str_extract(age_plot_range, "^.{1}"),
+                                     ifelse(age_plot_range %in% v2, str_extract(age_plot_range, "^.{2}"),
+                                            ifelse(age_plot_range %in% v3, str_extract(age_plot_range, "^.{3}"),
+                                                   str_extract(age_plot_range, "^.{4}")))))
+    
+  partial_healthy$order_age_ranges <- as.numeric(partial_healthy$order_age_ranges)
+
+  p <- ggscatter(partial_healthy, x = "order_age_ranges", y = "percentages",
+            add = "reg.line", conf.int = TRUE,
+            cor.coef = TRUE, cor.method = "spearman") +
+    theme_bw() +
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+         axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0)) +
+    ylim(0,100)+
+    ggtitle(target_species[i])
+  
+  plot_list[[i]] = p
+  
+  #Spearman correlation on healthy subjects only
+  res = cor.test(partial_healthy$percentages, partial_healthy$order_age_ranges,  method = "spearman")
+  pvalue <- res$p.value
+  #calculate Rho values 
+  rho <- res$estimate
+
+  results_df <- results_df %>% 
+    add_row(Species = target_species[i], Rho = rho, Pvalue = pvalue, 
+            Heatmap_sector = ifelse(target_species[i] %in% orange.sector, "Orange sector heatmap" , "Blue sector heatmap")) 
+}
+
+```
+
+#plot and save spearman correlations
+```{r}
+
+results_df.filtered <- results_df %>% 
+  filter(Species != "NA" & Pvalue < 0.05)
+
+#plotting function
+plot <- ggplot(data = results_df.filtered, mapping = aes(x = Heatmap_sector, y = Rho, fill = Heatmap_sector)) +
+    geom_boxplot(outlier.size = -1) +
+    scale_fill_manual(values=c("navy","darkred")) +
+    theme_bw() +
+    labs(y = "Spearman's Rho per species", x = "") +
+    theme(strip.background = element_rect(color="white", fill="white")) +
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0),
+          strip.background = element_rect(color="white", fill="white")) 
+  
+
+my_comparisons <- list(c("Blue sector heatmap", "Orange sector heatmap"))
+stat.test <- compare_means(Rho ~ Heatmap_sector, data = results_df.filtered, method = "wilcox.test")
+final_plot <- plot + 
+  stat_compare_means(comparisons = my_comparisons, label = "p.signif") 
+
+pdf(file=paste0("../../figures/co-occurrence/spearman_Rho.pdf"), width=8, height=6)
+final_plot 
+dev.off()
+```
+
+#Baloon plot (adapted to be a necklace plot)
+```{r}
+oxygen_table <- read_delim("../../data/co-occurrence/assignment_files/mOTU2.0_features_species_curated.tsv", "\t", col_types=cols(
+  mOTU2.0_cluster = col_character(),
+  Anaerobic = col_character(),
+  Aerotolerant = col_character(),
+  Facultative_aerobic = col_character(),
+  Microaerophilic = col_character(),
+  Aerobic = col_character()
+))
+
+oxygen_table <- oxygen_table %>% 
+    dplyr::mutate(mOTU2.0_cluster = str_remove(mOTU2.0_cluster, 'mOTU_v2_')) 
+
+oxygen_table_merged <- oxygen_table %>% 
+  mutate(Merged_facultative_aerobic = ifelse(Aerotolerant == "1" | Facultative_aerobic == "1" | Microaerophilic == "1", "1" , 
+                                             ifelse(Aerotolerant == "#N/A" & Facultative_aerobic == "#N/A" & Microaerophilic == "#N/A", "#N/A", "0"))) %>% 
+  select(mOTU2.0_cluster, Anaerobic, Merged_facultative_aerobic, Aerobic)
+
+#keep species of interest (in the heatmap)
+oxygen_table_merged_filtered <- oxygen_table_merged[oxygen_table_merged$mOTU2.0_cluster %in% target_species, ]
+#keep same row order of heatmap
+oxygen_table_merged_filtered <- oxygen_table_merged_filtered[match(rev(order.species.cdiff), oxygen_table_merged_filtered$mOTU2.0_cluster),]
+
+oxygen_table_clean <- oxygen_table_merged_filtered %>% 
+  filter(is.na(mOTU2.0_cluster)==FALSE) %>% 
+  dplyr::mutate(oxygen_requirement = ifelse(Anaerobic == "1", "Obligate anaerobic",
+                                     ifelse(Merged_facultative_aerobic == "1", "Facultative anaerobic or aerobic",
+                                            ifelse(Aerobic == "1", "Facultative anaerobic or aerobic", "Unknown"))),
+         col = "1", 
+         row = row_number()) %>% # order of lines in plot 
+  select(mOTU2.0_cluster, oxygen_requirement, col, row) 
+
+baloon_plot_oxygen <- ggplot(oxygen_table_clean, aes(x=factor(col), y=factor(row), color=oxygen_requirement, alpha=1.0)) +
+  geom_point(colour="black", shape=21, alpha = 1, stroke = 0.6, size = 4, aes(fill = factor(oxygen_requirement))) + # plot as points
+  scale_fill_manual(values=c("gold", "#616161", "#FFFFFF")) +
+  theme_bw() +
+  theme(axis.line = element_blank(),            # disable axis lines
+        axis.title = element_blank(),           # disable axis titles
+        panel.border = element_blank(),         # disable panel border
+        panel.grid.major.x = element_blank(),   # disable lines in grid on X-axis
+        panel.grid.minor.x = element_blank()) +  # disable lines in grid on X-axis 
+  guides(fill=guide_legend(title="Oxygen requirement class")) 
+```
+
+#Rho values
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+library(colorRamps)
+
+results_df_merged_filtered <- results_df[results_df$Species %in% target_species, ]
+results_df_merged_filtered <- results_df_merged_filtered[match(rev(order.species.cdiff), results_df_merged_filtered$Species),]
+as.numeric(as.character(results_df_merged_filtered$Rho))
+
+rho_labels <- c("-1.0", "-0.8", "-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6", "0.8", "1.0")
+
+rho_table <- results_df_merged_filtered %>% 
+  select(Species, Rho) %>% 
+  mutate_if(is.numeric, round, 1) %>% 
+    dplyr::mutate(col = "1",
+           row = row_number(),
+           Rho_range = case_when(
+             Rho < -1.0 ~ rho_labels[1],
+             Rho >= -1.0 & Rho < -0.8 ~ rho_labels[1],
+             Rho >= -0.8 & Rho < -0.6 ~ rho_labels[2],
+             Rho >= -0.6 & Rho < -0.4 ~ rho_labels[3],
+             Rho >= -0.4 & Rho < -0.2 ~ rho_labels[4],
+             Rho >= -0.2 & Rho < 0.0 ~ rho_labels[5],
+             Rho == 0.0 ~ rho_labels[6],
+             Rho > 0.0 & Rho <= 0.2 ~ rho_labels[7],
+             Rho > 0.2 & Rho <= 0.4 ~ rho_labels[8],
+             Rho > 0.4 & Rho <= 0.6 ~ rho_labels[9],
+             Rho > 0.6 & Rho <= 0.8 ~ rho_labels[10],
+             Rho > 0.8 & Rho <= 1.0 ~ rho_labels[11],
+             Rho > 1.0 ~ rho_labels[11]))
+
+baloon_plot_rho <- ggplot(rho_table, aes(x=factor(col), y=factor(row), color=Rho_range, alpha=1.0)) +
+  geom_point(colour="black", shape=21, alpha = 1, stroke = 0.6, size = 4, aes(fill = factor(Rho_range, levels=rho_labels))) + 
+  scale_fill_brewer(palette="RdBu", drop=FALSE)+
+  theme_bw() +
+  theme(axis.line = element_blank(),            # disable axis lines
+        axis.title = element_blank(),           # disable axis titles
+        panel.border = element_blank(),         # disable panel border
+        panel.grid.major.x = element_blank(),   # disable lines in grid on X-axis
+        panel.grid.minor.x = element_blank()) +  # disable lines in grid on X-axis 
+  guides(fill=guide_legend(title="Spearman's Rho"))
+```
+
+#plot and save spearman correlations
+```{r}
+
+results_df.filtered <- results_df %>% 
+  filter(Species != "NA" & Pvalue < 0.05)
+
+#function to count number of samples per each boxplot
+stat_box_data <- function(y) {
+  return(data.frame(y = -0.82, label = paste(length(y))))
+}
+
+#plotting function
+plot <- ggplot(data = results_df.filtered, mapping = aes(x = Heatmap_sector, y = Rho, fill = Heatmap_sector)) +
+    geom_boxplot(outlier.size = -1) +
+    scale_fill_manual(values=c("navy","darkred")) +
+    #scale_color_manual(values = c("navy", "#CC6633"))+
+    theme_bw() +
+    labs(y = "Spearman's Rho per species", x = "") +
+    theme(strip.background = element_rect(color="white", fill="white")) +
+    theme(plot.title = element_text(family = "Helvetica", face = "bold", size = (10)), 
+          axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0),
+          strip.background = element_rect(color="white", fill="white")) 
+  
+
+my_comparisons <- list(c("Blue sector heatmap", "Orange sector heatmap"))
+stat.test <- compare_means(Rho ~ Heatmap_sector, data = results_df.filtered, method = "wilcox.test")
+final_plot <- plot + 
+  stat_compare_means(comparisons = my_comparisons, label = "p.signif") 
+final_plot
+
+pdf(file=paste0("../../figures/co-occurrence/suppl_spearman_Rho_single.pdf"), width=8, height=6)
+final_plot 
+dev.off()
+```
+
+#combine plots
+```{r}
+pdf(file="../../figures/co-occurrence/heatmap_oxygen_spearman.pdf", width=27, height=15)
+plot_grid(heatmap_plot, dendro.plot, baloon_plot_oxygen, baloon_plot_rho,
+          nrow = 1,
+          align = 'h',
+          rel_heights = c(2,2,2,2),
+          rel_widths = c(1.4,0.2,0.3,0.3))
+dev.off()
+```

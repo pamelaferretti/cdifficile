@@ -1,0 +1,144 @@
+---
+title: "C. difficile toxin genes detection analysis - CDI samples only"
+output: html_document
+#modified and extended by Pamela Ferretti
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("ggdendro")
+library("reshape2")
+library("grid")
+library(magrittr)
+library("ggrepel") #Avoid overlapping labels
+library(cowplot)
+```
+
+#Load data and metadata files
+```{r}
+
+metadata_file.splittedCDI <- read_csv("../../data/CDI/CDI_and_splittedControl_samples.csv",
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character(), 
+                            diet = col_character(),
+                            group = col_character(),
+                            total_MG_coverage = col_number()
+))
+
+metadata_file.splittedCDI <- metadata_file.splittedCDI %>% 
+  filter(Host == "Human" & Environment == "Gut" & final_representative == "Yes")
+
+toxin_file <- read_tsv("../../data/toxin_gene_detection/GlobalToxinSurvey_withReadCov.txt")
+
+toxin_species <- read_csv("../../data/toxin_gene_detection/toxins.csv",
+                          col_types = cols_only(
+                            Toxin_ID = col_factor(),
+                            Toxin_name = col_factor(), 
+                            Description = col_factor(),
+                            Species = col_factor()))
+
+toxin.all.unfiltered <- left_join(toxin_file, toxin_species, by="Toxin_ID")
+
+# Threshold min number of reads magging against toxin genes 
+# 10reads, avg length 200 bp, tox gene length is 8kbp, coverage at best around 1/4 of tox gene
+# similar coverage obtained via using MG in mOTUs
+threshold_min_reads = 10
+toxin.all <- toxin.all.unfiltered %>%
+  filter(Raw >= threshold_min_reads)
+
+```
+
+#color palette
+```{r}
+size_text = 10 
+colors <- c("darkred",'#BDBDBD', "#424242")
+```
+
+```{r}
+
+species_target <- c("Shigella flexneri","Escherichia coli","Clostridium perfringens","Clostridium difficile","Staphylococcus aureus","Pseudomonas aeruginosa","Aeromonas veronii","Campylobacter jejuni","Vibrio cholerae")
+
+```
+
+```{r}
+CDIall.samples <- metadata_file.splittedCDI %>%
+  pull(Samples)
+
+toxin.all.filtered <- toxin.all %>% 
+  filter(Samples %in% CDIall.samples) %>% 
+  filter(!is.na(Species))
+
+toxin.all.filtered.merged <- left_join(toxin.all.filtered, metadata_file.splittedCDI, by ="Samples")
+
+toxin.all.filtered.merged.clean <- toxin.all.filtered.merged %>% 
+  mutate(species_clean = case_when(
+    (str_detect(Species,"Shigella flexneri")) ~ "Shigella flexneri", 
+    (str_detect(Species,"Escherichia coli")) ~ "Escherichia coli", 
+    (str_detect(Species,"Clostridium perfringens")) ~ "Clostridium perfringens", 
+    (str_detect(Species,"Clostridium difficile")) ~ "Clostridium difficile",
+    (str_detect(Species,"Staphylococcus aureus")) ~ "Staphylococcus aureus",
+    (str_detect(Species,"Pseudomonas aeruginosa")) ~ "Pseudomonas aeruginosa",
+    (str_detect(Species,"Aeromonas veronii")) ~ "Aeromonas veronii",
+    (str_detect(Species,"Campylobacter jejuni")) ~ "Campylobacter jejuni",
+    (str_detect(Species,"Vibrio cholerae")) ~ "Vibrio cholerae",
+    TRUE~"NA"))
+
+
+tox.overview <-
+  toxin.all.filtered.merged.clean %>% 
+  select(Samples, species_clean) %>% 
+  group_by(Samples, species_clean) %>% 
+  mutate(counts = TRUE && n()) %>% 
+  ungroup() %>% distinct() %>% 
+  pivot_wider(names_from = species_clean, values_from = counts) %>% 
+  mutate(across(everything(), ~ replace_na(., 0))) %>% 
+  left_join(toxin.all.filtered.merged.clean %>% select(Samples, group), by="Samples") %>%  
+  distinct()
+
+library(ComplexUpset)
+upset <- ComplexUpset::upset(tox.overview,
+                    species_target,
+                    base_annotations=list('Intersection size'=intersection_size(counts=TRUE,
+                                                                                mapping=aes(fill=group)))
+)
+
+upset
+
+```
+
+
+```{r}
+
+pdf(file=paste0("../../figures/toxin_genes_detection/upset.pdf"), width=12, height=6)
+upset
+dev.off()
+
+```
+

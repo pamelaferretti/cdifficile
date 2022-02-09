@@ -1,0 +1,220 @@
+---
+title: "C. difficile co-occurrence analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Make R behave slightly less stupid
+options(stringsAsFactors = FALSE)
+```
+
+#prepare environment
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("ggdendro")
+library(dplyr)
+library("reshape2")
+library("grid")
+library("ggrepel") #Avoid overlapping labels
+```
+
+#Load metadata table 
+```{r}
+#after timeseries dereplication: one sample per subject or per timeseries
+metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            unique_subject_id = col_character(),
+                            timepoint = col_double(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character()
+))
+```
+
+#load count table
+```{r}
+count_file <- read_tsv("../../data/mOTU_counts.tsv")
+```
+
+#transform count table into abundance table
+```{r}
+transform_to_abundance <- function(column){
+  column/sum(column)
+}
+
+abundances <- count_file %>% 
+  mutate_at(vars(-...1), transform_to_abundance)
+```
+
+```{r}
+categorize_samples <- function(metadata_file, status, age){
+  metadata_file %>% 
+    filter(Status==status & Age_group==age & Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes") %>% 
+    pull(Samples)
+}
+
+ages <- c("Infant", "Child", "Adolescent", "Adult", "Elderly")
+statuses <- c("Healthy", "Diseased")
+
+for (age in ages){
+  for (status in statuses){
+    samples_target <- categorize_samples(metadata_file, status, age)
+    abundances_filtered <- abundances %>% 
+      select(...1, all_of(samples_target))
+    write.csv(abundances_filtered, file = 
+                paste0("../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool", "_", age, "_", status, "_reps.csv"), row.names=FALSE)
+  }
+}
+```
+
+#filter human stool samples only
+```{r}
+categorize_samples_master <- function(metadata_file){
+  metadata_file %>% 
+    filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes") %>% 
+    pull(Samples)
+}
+
+samples_target <- categorize_samples_master(metadata_file)
+abundances_filtered <- abundances %>% 
+  select(...1, all_of(samples_target))
+
+write.csv(abundances_filtered, 
+          file = "../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool_reps.csv", row.names=FALSE)
+```
+
+#create incidence table and apply Fisher on each age and health category
+```{r }
+    
+ages <- c("Infant", "Child", "Adolescent", "Adult", "Elderly")
+statuses <- c("Healthy", "Diseased")
+
+input_file <- "../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool"
+for (age in ages){
+  for (status in statuses){
+
+    input_file_complete <- paste0(input_file, "_", age, "_", status, "_reps.csv")
+    output_file_complete <-  paste0(input_file, "_", age, "_", status, "_reps_resultsBH.csv")
+
+    abund_table<-read.delim(input_file_complete, sep=",", header = T, row.names = 1) %>% as.matrix()
+    #abund_table <- abund_table[rowSums(abund_table) > 0, ]
+
+    #Turn into incidence table
+    dat.inc <- abund_table > 0
+
+    #Remove "-1"
+    dat.inc <- dat.inc[rownames(dat.inc) != "-1", , drop=FALSE]
+
+    #Remove non-observed taxa
+    dat.inc1 <- dat.inc[rowSums(dat.inc) > 0, , drop=FALSE]
+    dat.inc2 <- dat.inc[rowSums(dat.inc) == 0, , drop=FALSE]
+
+    #Identify C diff specIs
+    tmp.cdiff <- dat.inc[grepl("difficile", rownames(dat.inc)), , drop=FALSE] 
+    #drop prevents data structure change in case of only one specI found
+    #https://stat.ethz.ch/R-manual/R-devel/library/base/html/Extract.data.frame.html
+    inc.cdiff <- colSums(tmp.cdiff) > 0 
+
+    #Iterate through other species and perform Fisher's tests
+    collect.results <- data.frame()
+
+    for (motu in rownames(dat.inc)[!grepl("difficile", rownames(dat.inc))]) {
+      show(motu)
+      inc.curr <- dat.inc[motu, ]
+
+      ct <- matrix(0, nrow = 2, ncol = 2)
+      ct[1,1] <- sum(inc.cdiff & inc.curr)
+      ct[1,2] <- sum(inc.cdiff & !inc.curr)
+      ct[2,1] <- sum(!inc.cdiff & inc.curr)
+      ct[2,2] <- sum(!inc.cdiff & !inc.curr)
+
+      collect.results <- rbind(
+        collect.results,
+        data.frame(
+          species = motu,
+          prevalence = sum(inc.curr) / length(inc.curr),
+          broom::tidy(fisher.test(ct))
+      )
+      )
+    }
+    
+    #adjust pvalues using BH
+    collect.results$BH <- p.adjust(collect.results$p.value, method = "BH")
+    write.csv(collect.results, output_file_complete, row.names = FALSE)
+  }
+}
+```
+
+#create incidence table and apply Fisher on all human gut stool samples
+```{r}
+input_file <- "../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool"
+
+input_file_complete <- paste0(input_file,"_reps.csv")
+output_file_complete <-  paste0(input_file,"_reps_resultsBH.csv")
+
+abund_table<-read.delim(input_file_complete, sep=",", header = T, row.names = 1) %>% as.matrix()
+
+#Turn into incidence table
+dat.inc <- abund_table > 0
+
+#Remove "-1"
+dat.inc <- dat.inc[rownames(dat.inc) != "-1",  , drop=FALSE]
+
+#Remove non-observed taxa
+dat.inc1 <- dat.inc[rowSums(dat.inc) > 0,  , drop=FALSE]
+dat.inc2 <- dat.inc[rowSums(dat.inc) == 0,  , drop=FALSE]
+
+#Identify C diff specIs
+tmp.cdiff <- dat.inc[grepl("difficile", rownames(dat.inc)),  , drop=FALSE]
+#drop prevents data structure change in case of only one specI found
+#https://stat.ethz.ch/R-manual/R-devel/library/base/html/Extract.data.frame.html
+inc.cdiff <- colSums(tmp.cdiff) > 0
+
+#Iterate through other species and perform Fisher's tests
+collect.results <- data.frame()
+
+for (motu in rownames(dat.inc)[!grepl("difficile", rownames(dat.inc))]) {
+  inc.curr <- dat.inc[motu, ]
+
+  ct <- matrix(0, nrow = 2, ncol = 2)
+  ct[1,1] <- sum(inc.cdiff & inc.curr)
+  ct[1,2] <- sum(inc.cdiff & !inc.curr)
+  ct[2,1] <- sum(!inc.cdiff & inc.curr)
+  ct[2,2] <- sum(!inc.cdiff & !inc.curr)
+
+  collect.results <- rbind(
+    collect.results,
+    data.frame(
+      species = motu,
+      prevalence = sum(inc.curr) / length(inc.curr),
+      broom::tidy(fisher.test(ct))
+  )
+  )
+}
+#adjust pvalues using BH
+collect.results$BH <- p.adjust(collect.results$p.value, method = "BH")
+write.csv(collect.results, output_file_complete, row.names = FALSE)
+```
+
+

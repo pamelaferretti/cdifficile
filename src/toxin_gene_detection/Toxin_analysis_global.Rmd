@@ -1,0 +1,198 @@
+---
+title: "C. difficile toxin genes detection analysis - global set of samples"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+```
+
+#Prepare environment.
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+library(gridExtra)
+library("ggdendro")
+library("reshape2")
+library("grid")
+library(magrittr)
+library("ggrepel") #Avoid overlapping labels
+library(cowplot)
+```
+
+
+#Read metadata Table 
+```{r}
+#after timeseries dereplication: one sample per subject or per timeseries
+metadata_global <- read_csv("../../data/metadata_timeseries_dereplicated.csv",
+                          col_types = cols_only(
+                            Samples = col_character(),
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            subject_disease_status = col_character(),
+                            final_representative = col_character(), 
+                            diet = col_character(),
+                            group = col_character(),
+                            total_MG_coverage = col_integer()
+))
+
+metadata_global <- metadata_global %>% 
+  filter(Host == "Human" & Environment == "Gut" & final_representative == "Yes")
+         
+toxin_file <- read_tsv("../../data/toxin_gene_detection/GlobalToxinSurvey_withReadCov.txt")
+head(toxin_file)   
+
+toxin_species <- read_csv("../../data/toxin_gene_detection/toxins.csv",
+                          col_types = cols_only(
+                            Toxin_ID = col_factor(),
+                            Toxin_name = col_factor(), 
+                            Description = col_factor(),
+                            Species = col_factor()))
+
+toxin.all <- left_join(toxin_file, toxin_species, by="Toxin_ID")
+
+tox.allSamples.unfiltered <- left_join(toxin.all, metadata_global, by="Samples")
+
+# Threshold min number of reads magging against toxin genes 
+# 10reads, avg length 200 bp, tox gene length is 8kbp, coverage at best around 1/4 of tox gene
+# similar coverage obtained via using MG in mOTUs
+threshold_min_reads = 10
+tox.allSamples <- tox.allSamples.unfiltered %>%
+  filter(Raw >= threshold_min_reads)
+```
+
+#color palette
+```{r}
+size_text = 10 
+colors <- c("darkred",'#BDBDBD', "#424242")
+```
+
+# percentage prevalence of toxigenic cdiff based on tox screening
+# totals are Cdiff positive samples only
+```{r}
+totals <- metadata_global%>% 
+  filter(!is.na(Age_group) & !is.na(Status) & Cdiff=="Yes") %>% 
+  mutate(age_status = paste0(Age_group, "_", Status)) %>% 
+  group_by(age_status) %>% 
+  count()
+  
+cdiffToxs <- tox.allSamples %>% 
+  filter(Species =="Clostridium difficile 630" & !is.na(Age_group) & !is.na(Status)) %>% 
+  mutate(age_status = paste0(Age_group, "_", Status)) %>% 
+  group_by(Samples, Status, Age_group) %>% 
+  dplyr::summarise(n_cdiffTox_perSample = dplyr::n()) %>% 
+  group_by(n_cdiffTox_perSample, Status, Age_group) %>% 
+  dplyr::summarise(nSamples_withX_cdiffToxs = dplyr::n()) %>% 
+  mutate(age_status = paste0(Age_group, "_", Status)) %>% 
+  mutate(n_cdiffTox_perSample=ifelse(n_cdiffTox_perSample=="1", "either", "both")) 
+
+perc_toxsCdiffPos <- left_join(totals, cdiffToxs, by="age_status")
+perc_toxsCdiffPos$age_status <- as.factor(perc_toxsCdiffPos$age_status)
+
+perc_toxsCdiffPos <- perc_toxsCdiffPos %>% 
+  filter(!is.na(n_cdiffTox_perSample) & n>5) %>% 
+  mutate(perc = nSamples_withX_cdiffToxs*100/n,
+         Age_group=fct_relevel(Age_group, "Infant", "Child", "Adolescent", "Adult", "Elderly"),
+         point_size = case_when(
+             (count>=5 & count<50) ~ 1, 
+             (count>=50 & count<100) ~ 2,
+             (count>=100 & count<500) ~ 3,
+             (count>=500) ~ 3,
+             #less than n=5 observations supporting the group
+             TRUE ~ 0)
+)
+
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+
+tox_ages <- ggplot(perc_toxsCdiffPos, aes(y=perc, x=Age_group, fill = n_cdiffTox_perSample)) + 
+  geom_bar(stat='identity', position = "stack") + #width=0.7) +
+  theme_bw() +
+  ylim(0,100)+
+  scale_fill_manual(values = c('#80CBC4', '#006064')) +
+  stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2) +
+  facet_wrap(~Status,  nrow = 1) +
+  theme(legend.position = "top") 
+
+pdf(file="../../figures/toxin_genes_detection/cdiffTox_Samples.pdf", width=6, height=11)
+grid.arrange(tox_ages, nrow = 1)
+dev.off()
+```
+
+#toxin gene carriage divided by semester during the first year of life
+```{r}
+#calculate totals using the metadata input file used for toxin hunt
+metadata_global.ageMonths <- metadata_global %>% 
+  filter(!is.na(Age_months) &  str_detect(Age_months, "-") == FALSE)
+
+metadata_global.ageMonths$Age_months <- as.numeric(metadata_global.ageMonths$Age_months)
+
+totals.semester <- metadata_global.ageMonths%>%
+  filter(Age_group == "Infant" & !is.na(Status) & Cdiff=="Yes") %>% 
+  mutate(semester = ifelse(Age_months<=6, "First", 
+                           ifelse ((Age_months>6 & Age_months<=12), "Second", "NA"))) %>% 
+  mutate(semester_status = paste0(semester, "_", Status)) %>% 
+  group_by(semester_status) %>% 
+  count()
+  
+tox.allSamples.ageMonths <- tox.allSamples %>% 
+  filter(!is.na(Age_months) &  str_detect(Age_months, "-") == FALSE)
+
+tox.allSamples.ageMonths$Age_months <- as.numeric(tox.allSamples.ageMonths$Age_months)
+
+cdiffToxs.semester <- tox.allSamples.ageMonths %>% 
+  filter(Species =="Clostridium difficile 630" & Age_group == "Infant" & !is.na(Status)) %>% 
+  mutate(semester = ifelse(Age_months<=6, "First", 
+                           ifelse ((Age_months>6 & Age_months<=12), "Second", "NA"))) %>% 
+  mutate(semester_status = paste0(semester, "_", Status)) %>% 
+  group_by(Samples, Status, semester) %>% 
+  dplyr::summarise(n_cdiffTox_perSample = dplyr::n()) %>% 
+  group_by(n_cdiffTox_perSample, Status, semester) %>% 
+  dplyr::summarise(nSamples_withX_cdiffToxs = dplyr::n()) %>% 
+  mutate(semester_status = paste0(semester, "_", Status)) %>% 
+  mutate(n_cdiffTox_perSample=ifelse(n_cdiffTox_perSample=="1", "either", "both")) 
+
+perc_toxsCdiffPos.semester <- left_join(totals.semester, cdiffToxs.semester, by="semester_status")
+perc_toxsCdiffPos.semester$semester_status <- as.factor(perc_toxsCdiffPos.semester$semester_status)
+
+perc_toxsCdiffPos.semester <- perc_toxsCdiffPos.semester %>% 
+  filter(!is.na(n_cdiffTox_perSample) & n>5) %>% 
+  mutate(perc = nSamples_withX_cdiffToxs*100/n,
+         Age_group=fct_relevel(semester, "First", "Second"),
+)
+
+  
+stat_box_data <- function(y) {
+  return(data.frame(y = 0, label = paste(length(y))))
+}
+
+tox.semester <- ggplot(perc_toxsCdiffPos.semester, aes(y=perc, x=Age_group, fill = n_cdiffTox_perSample)) + 
+  geom_bar(stat='identity', position = "stack") + #width=0.7) +
+  theme_bw() +
+  ylim(0,100)+
+  scale_fill_manual(values = c('#80CBC4', '#006064')) +
+  stat_summary(fun.data = stat_box_data, geom = "text", fun = median, position = position_dodge(width = 0.85), size=2) +
+  facet_wrap(~Status,  nrow = 1) +
+  theme(legend.position = "top") 
+
+pdf(file="../../figures/toxin_genes_detection/cdiffTox_Samples_semesters.pdf", width=4, height=3)
+tox.semester
+dev.off()
+```

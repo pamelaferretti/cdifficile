@@ -1,0 +1,364 @@
+---
+title: "ANOVA and glm analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(vegan)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(car)
+library(margins)
+library(gridExtra)
+library(broom)
+#get Rsquared from glm output
+library(rsq) 
+```
+
+# load and manipulate data
+```{r}
+metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+                          col_types = cols_only(
+                            Study = col_factor(), 
+                            Environment = col_factor(), 
+                            Gut_sample_type = col_factor(),
+                            Host = col_factor(),
+                            Age_group = col_factor(), 
+                            Age_months = col_character(), 
+                            Status = col_factor(), 
+                            Premature = col_factor(),
+                            Delivery_mode = col_factor(),
+                            West = col_factor(),
+                            Geography = col_factor(), 
+                            Continent = col_factor(), 
+                            Sex = col_factor(),
+                            Abx = col_factor(), 
+                            CDI = col_factor(), 
+                            Cdiff = col_factor(),
+                            final_representative = col_character(), 
+                            weight_kg = col_double(), 
+                            height_cm = col_double(), 
+                            bmi = col_double(), 
+                            diet = col_factor(), 
+                            smoker = col_factor(), 
+                            Gestational_approximated_weeks = col_double(), 
+                            abx_at_birth = col_factor(), 
+                            Birth_weight = col_double(), 
+                            sum_read_count = col_double(), 
+                            sum_base_count = col_double(),
+                            total_MG_coverage = col_double()
+))
+
+#preliminary filtering
+metadata_file2 <- metadata_file %>%
+  filter(Host=="Human" & Environment=="Gut" & Gut_sample_type=="Stool" & final_representative=="Yes") %>% 
+  mutate(Cdiff_binary = ifelse(Cdiff == "Yes", 1, 0),
+         bmi_categories = case_when(
+             (bmi<18.5) ~ "underweight",
+             (bmi>=18.5 & bmi <= 24.9) ~ "normal",
+             (bmi>=25 & bmi <= 29.9) ~ "overweight",
+             TRUE ~ "obese"), 
+         diet_infant = ifelse((diet != "omnivorous" & diet != "vegan" & diet != "vegetarian"), diet, NA))
+
+metadata_file2$bmi_categories <- as.factor(metadata_file2$bmi_categories) 
+metadata_file2$diet_infant <- as.factor(metadata_file2$diet_infant) 
+
+```
+
+# sequential ANOVA divided per age group (Infants and adults only)
+```{r}
+
+#calculate sequential ANOVA for infants
+metadata_file2.infant <- metadata_file2 %>% 
+  filter(Age_group=="Infant")
+
+aov.cumulative.infant <- 
+  Anova(glm(Cdiff_binary ~ total_MG_coverage + Geography + Abx + Sex + Status + Premature + Delivery_mode + diet, family = "binomial", data=metadata_file2.infant), type=2) %>%
+  broom::tidy()
+
+aov.cumulative.infant$p.adj <- p.adjust(aov.cumulative.infant$p.value)
+#print(aov.cumulative.infant)
+
+#calculate sequential ANOVA for adults
+metadata_file2.adult <- metadata_file2 %>% 
+  filter(Age_group=="Adult")
+
+aov.cumulative.adult <- 
+  Anova(glm(Cdiff_binary ~ total_MG_coverage + Geography + Abx + Sex + Status + bmi_categories, 
+            family = "binomial", data=metadata_file2.adult), type=2) %>%
+  broom::tidy()
+
+aov.cumulative.adult$p.adj <- p.adjust(aov.cumulative.adult$p.value)
+#print(aov.cumulative.adult)
+
+aov.cumulative.infant.intervals <- aov.cumulative.infant %>% 
+  mutate(significance.padj = case_when(
+             (p.adj > 0.05) ~ "ns",
+             (p.adj <= 0.05 & p.adj > 0.01) ~ "*",
+             (p.adj <= 0.01 & p.adj > 0.001) ~ "**",
+             (p.adj <= 0.001) ~ "***",
+             TRUE ~ "value out of ranges"),
+         type = "sequential_infant", 
+         metric = "Cdiff_binary", 
+         site = "stool") 
+
+
+aov.cumulative.adult.intervals <- aov.cumulative.adult %>% 
+  mutate(significance.padj = ifelse(p.adj > 0.05, "ns", 
+                               ifelse(p.adj <= 0.05 & p.adj > 0.01, "*",
+                                      ifelse(p.adj <= 0.01 & p.adj > 0.001, "**",
+                                             ifelse(p.adj <= 0.001, "***", "value out of ranges")))),
+         type = "sequential_adult", 
+         metric = "Cdiff_binary", 
+         site = "stool") 
+```
+
+#single factors divided by age group (infants and adults only) - combined with Marker Gene (MG) coverage
+```{r}
+#preliminary check to see which variables should be dropped (less than 2 factors left after removing NAs)
+ifelse(n <- sapply(metadata_file2, function(x) length(levels(x))) ==1, "Drop this variable", "OK")
+
+list_continuous1 <-  c("total_MG_coverage")
+list_continuous2 <-  c("bmi")
+idx_infant = c("Abx", "Sex", "Status", "Premature", "Delivery_mode", "Geography", "diet", "total_MG_coverage")
+idx_adult = c("Abx", "Sex", "Status", "bmi_categories", "Geography", "CDI", "total_MG_coverage")
+
+collect.single.infant <- data.frame()
+collect.single.adult <- data.frame()
+
+glm.single.rsq.adj <- data.frame() #collected adjusted Rsquared
+
+#calculate single factor glm for infants
+for (i in idx_infant) {
+  metadata_file2.infants <- metadata_file2 %>%
+    filter(Age_group=="Infant")
+  
+  if (i %in% list_continuous1) { #continuous variables (MG coverage)
+    glm.single <- glm(substitute(Cdiff_binary~ i, list(i = as.name(i))), 
+                      family = "binomial", 
+                      data = metadata_file2.infants, 
+                      na.action=na.omit)
+  }else{
+    if (i %in% list_continuous2) { #continuous variables (BMI)
+      glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage+i, list(i = as.name(i))), 
+                      family = "binomial", 
+                      data = metadata_file2.infants, 
+                      na.action=na.omit)
+      } else { # discrete variables
+        glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage + as.factor(i), list(i = as.name(i))), family = "binomial", 
+                      data = metadata_file2.infants, na.action=na.omit)
+      }
+  }
+  
+  aov.single <- Anova(glm.single) %>% broom::tidy() %>% 
+    mutate(site = "human_stool", metric = "Cdiff_binary")
+  aov.single <- aov.single[1,]
+  aov.single$term <- i
+  # collect data
+  collect.single.infant <- rbind(collect.single.infant, aov.single)
+  
+  #coefficients and adjusted R squared
+  summary(glm.single)
+  adj.rsq <- rsq(glm.single, adj = TRUE) 
+  glm.single.rsq.adj <- rbind(glm.single.rsq.adj, data.frame(term = paste0("total_MG_coverage+",i), age = "Infant", rsquared_adjusted = adj.rsq)) # get adjusted R squared
+}
+
+#calculate single factor glm for adults
+for (i in idx_adult) {
+  metadata_file2.adults <- metadata_file2 %>%
+    filter(Age_group=="Adult")
+  
+  if (i %in% list_continuous1) { #continuous variables (MG coverage)
+    glm.single <- glm(substitute(Cdiff_binary~ i, list(i = as.name(i))), 
+                      family = "binomial", 
+                      data = metadata_file2.adults, 
+                      na.action=na.omit)
+  }else{
+    if (i %in% list_continuous2) { #continuous variables (BMI)
+      glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage + i, list(i = as.name(i))), 
+                      family = "binomial", 
+                      data = metadata_file2.adults, 
+                      na.action=na.omit)
+      } else { # discrete variables
+        glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage + as.factor(i), list(i = as.name(i))), family = "binomial", 
+                      data = metadata_file2.adults, na.action=na.omit)
+      }
+  }
+  
+  aov.single <- Anova(glm.single) %>% broom::tidy() %>% 
+    mutate(site = "human_stool", metric = "Cdiff_binary")
+  aov.single <- aov.single[1,]
+  aov.single$term <- i
+  # collect data
+  collect.single.adult <- rbind(collect.single.adult, aov.single)
+  
+  #coefficients and adjusted R squared
+  summary(glm.single)
+  adj.rsq <- rsq(glm.single, adj = TRUE) 
+  glm.single.rsq.adj <- rbind(glm.single.rsq.adj, data.frame(term = paste0("total_MG_coverage+",i), age = "Adult", rsquared_adjusted = adj.rsq)) # get adjusted R squared
+}
+
+#fdr correction 
+collect.single.infant$p.adj <- p.adjust(collect.single.infant$p.value)
+collect.single.adult$p.adj <- p.adjust(collect.single.adult$p.value)
+
+glm.single.rsq.adj
+
+#add significant symbols to infant table
+collect.single.infant.intervals <- collect.single.infant %>% 
+  mutate(significance.padj = case_when(
+    (p.adj > 0.05) ~ "ns", 
+    (p.adj <= 0.05 & p.adj > 0.01) ~ "*",
+    (p.adj <= 0.01 & p.adj > 0.001) ~ "**",
+    (p.adj <= 0.001)  ~ "***",
+    TRUE ~ "value out of ranges"),
+    type = "single_factors_infant")
+
+#add significant symbols to adult table
+collect.single.adult.intervals <- collect.single.adult %>% 
+  mutate(significance.padj = case_when(
+    (p.adj > 0.05) ~ "ns", 
+    (p.adj <= 0.05 & p.adj > 0.01) ~ "*",
+    (p.adj <= 0.01 & p.adj > 0.001) ~ "**",
+    (p.adj <= 0.001)  ~ "***",
+    TRUE ~ "value out of ranges"),
+    type = "single_factors_adult")
+
+
+```
+
+#combine single factors and sequential for infants and adults
+```{r}
+
+combined.allAges <- rbind(collect.single.infant.intervals,
+                          collect.single.adult.intervals,
+                          aov.cumulative.infant.intervals,
+                          aov.cumulative.adult.intervals)
+
+combined.allAges <-  combined.allAges %>% 
+  mutate(term=fct_relevel(term, "total_MG_coverage", "Geography", "Abx", "Sex", "Status", "Premature", "Delivery_mode", "bmi_categories", "diet", "CDI"))
+
+heatmap.combined.allAges.padj <- ggplot(combined.allAges %>% filter(!is.na(p.adj)), aes(term, type, fill= significance.padj)) + 
+  geom_tile() +
+  theme_bw() +
+  scale_fill_manual(values=c("#B2DFDB", "#26A69A", "#004D40", "#EEEEEE", "#EEEEEE")) + #for total_MG_coverage
+  theme(axis.text.x = element_text(angle=45, vjust=1.0, hjust = 1.0, size = 10))
+
+```
+#sequential glm ANOVA
+```{r}
+#CDI + bmi + diet + smoker + Birth_weight
+glm.cumulative <- glm(Cdiff_binary ~ total_MG_coverage + Geography + Abx + Sex + Age_group + Status + Premature + Delivery_mode, family = "binomial", data=metadata_file2)
+aov.cumulative <- Anova(glm.cumulative, type=2) %>% broom::tidy()
+
+aov.cumulative$p.adj <- p.adjust(aov.cumulative$p.value)
+print(aov.cumulative)
+
+#get coefficients
+summary(glm.cumulative)
+
+#rsq(glm.cumulative) # get R squared
+glm.cumulative.rsq.adj <- rsq(glm.cumulative, adj = TRUE) # get adjusted R squared
+
+#calculate sequential glm for infants  
+glm.cumulative.infant <- glm(Cdiff_binary ~ total_MG_coverage + Geography + Abx + Sex + Status + Premature + Delivery_mode, 
+                             family = "binomial", data=metadata_file2 %>% filter(Age_group=="Infant"))
+aov.cumulative.infant <- Anova(glm.cumulative.infant, type=2) %>% broom::tidy()
+glm.cumulative.r.infant.sq.adj <- rsq(glm.cumulative.infant, adj = TRUE) # get adjusted R squared
+
+#calculate sequential glm for adults 
+glm.cumulative.adult <- glm(Cdiff_binary ~ total_MG_coverage + Geography + Abx + Sex + Status, 
+                            family = "binomial", data=metadata_file2 %>% filter(Age_group=="Adult"))
+aov.cumulative.adult <- Anova(glm.cumulative.adult, type=2) %>% broom::tidy()
+glm.cumulative.r.adult.sq.adj <- rsq(glm.cumulative.adult, adj = TRUE) # get adjusted R squared
+```
+
+#save plots
+```{r}
+pdf(file=paste0("../../figures/ANOVA/heatmap.p.adj.pdf"), width=10, height=8)
+heatmap.combined.allAges.padj
+dev.off()
+```
+
+#single factors divided by age group (infants and adults only) - combined with MG coverage - with ODDS RATIO
+```{r}
+#preliminary check to see which variables should be dropped (less than 2 factors left after removing NAs)
+ifelse(n <- sapply(metadata_file2, function(x) length(levels(x))) ==1, "Drop this variable", "OK")
+
+list_continuous1 <-  c("total_MG_coverage")
+list_continuous2 <-  c("bmi")
+idx_infant = c("Abx", "Sex", "Status", "Premature", "Delivery_mode", "Geography", "diet", "total_MG_coverage")
+idx_adult = c("Abx", "Sex", "Status", "bmi_categories", "Geography", "CDI", "total_MG_coverage")
+
+collect.single.infant.or <- data.frame()
+collect.single.infant.or <- data.frame()
+
+#infants
+for (i in idx_infant) {
+  metadata_file2.infants <- metadata_file2 %>%
+    filter(Age_group=="Infant")
+  
+  if (i %in% list_continuous1) { #continuous variables (MG coverage)
+    glm.single <- glm(substitute(Cdiff_binary~ i, list(i = as.name(i))), 
+                      family = "binomial", 
+                      data = metadata_file2.infants, 
+                      na.action=na.omit)
+  }else{
+    if (i %in% list_continuous2) { #continuous variables (BMI)
+      glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage+i, list(i = as.name(i))), 
+                      family = "binomial", 
+                      data = metadata_file2.infants, 
+                      na.action=na.omit)
+      } else { # discrete variables
+        glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage + as.factor(i), list(i = as.name(i))), family = "binomial", 
+                      data = metadata_file2.infants, na.action=na.omit)
+      }
+  }
+  
+  #odds ratio from coefficients
+  oddsRatio.single.infants <- glm.single$coefficients[2] %>% broom::tidy()
+  oddsRatio.single.infants <- oddsRatio.single.infants[1,]
+  oddsRatio.single.infants$term <- i
+  # collect data
+  collect.single.infant.or <- rbind(collect.single.infant.or, oddsRatio.single.infants)
+}
+
+collect.single.adult.or <- data.frame()
+collect.single.adult.or <- data.frame()
+
+#adults
+for (i in idx_adult) {
+  metadata_file2.adults <- metadata_file2 %>%
+    filter(Age_group=="Adult")
+
+  if (i %in% list_continuous1) { #continuous variables (MG coverage)
+    glm.single <- glm(substitute(Cdiff_binary~ i, list(i = as.name(i))),
+                      family = "binomial",
+                      data = metadata_file2.adults,
+                      na.action=na.omit)
+  }else{
+    if (i %in% list_continuous2) { #continuous variables (BMI)
+      glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage + i, list(i = as.name(i))),
+                      family = "binomial",
+                      data = metadata_file2.adults,
+                      na.action=na.omit)
+      } else { # discrete variables
+        glm.single <- glm(substitute(Cdiff_binary~ total_MG_coverage + as.factor(i), list(i = as.name(i))), family = "binomial",
+                      data = metadata_file2.adults, na.action=na.omit)
+      }
+  }
+
+  #odds ratio from coefficients
+  oddsRatio.single.adult <- glm.single$coefficients[2] %>% broom::tidy()
+  oddsRatio.single.adult <- oddsRatio.single.adult[1,]
+  oddsRatio.single.adult$term <- i
+  # collect data
+  collect.single.adult.or <- rbind(collect.single.adult.or, oddsRatio.single.adult)
+}
+```
+
