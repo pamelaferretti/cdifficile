@@ -1,1 +1,8 @@
-# cdifficile
+# C. difficile Meta-Analysis
+
+Clostridioides difficile is an urgent threat in hospital-acquired infections world-wide, yet the microbial composition associated with C. difficile, in particular in C. difficile infection (CDI) cases, remains poorly characterized. Here, we analysed 534 metagenomes from 10 publicly available CDI study populations. While we detected C. difficile in only 30% of CDI samples, multiple other toxigenic species capable of inducing CDI-like symptomatology were prevalent, raising concerns about CDI overdiagnosis. 
+
+To validate the sensitivity of metagenomics for C. difficile detection, we tracked C. difficile in 42,814 metagenomic samples from 253 public studies. We found that C. difficile prevalence, abundance and association with other bacterial species is age-dependent. In healthy adults, C. difficile is a rare taxon associated with an overall species richness reduction, while in healthy infants C. difficile is a common member of the gut microbiome and its presence is associated with a significant increase in species richness. More specifically, we identified a group of species co-occurring with C. difficile exclusively in healthy infants, enriched in obligate anaerobes and in species typically found in the gut microbiome of healthy adults. Overall, gut microbiome composition in presence of C. difficile in healthy infants is associated with multiple parameters linked to a healthy gut microbiome maturation towards an adult-like state. Our results suggest that C. difficile is a commensal in infants, and that asymptomatic carriage of C. difficile association with disease is dependent on its surrounding microbial context.
+
+
+
