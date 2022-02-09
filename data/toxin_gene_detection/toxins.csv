@@ -1,0 +1,136 @@
+Toxin_ID,Toxin_name,Description,Species
+VFG038364(gb|YP_001143938),aexT,"Type III secretion system effector AexT, bifunctional toxin with GTPase and ADPribosylase activity",Aeromonas salmonicida subsp. salmonicida A449
+VFG038894(gb|YP_004394278),aerA/act,hemolysin Asa1 [Aerolysin AerA/Cytotoxic enterotoxin Act (CVF788,Aeromonas veronii B565
+VFG038895(gb|YP_855347),ast,thermostable cytotonic enterotoxin [Heat-stable cytotonic enterotoxin,Aeromonas hydrophila subsp. hydrophila ATCC 7966
+VFG038912(gb|YP_855898),rtxA,multifunctional autoprocessing repeats-in-toxins ,Aeromonas hydrophila subsp. hydrophila ATCC 7966
+VFG038913(gb|YP_008042605),rtxA,structural toxin protein RtxA,Aeromonas hydrophila ML09-119
+VFG038914(gb|YP_855897),rtxC,cytolysin-activating lysine-acyltransferase RtxC ,Aeromonas hydrophila subsp. hydrophila ATCC 7966
+VFG038915(gb|YP_855896),rtxH,conserved hypothetical protein in rtx gene loci,Aeromonas hydrophila subsp. hydrophila ATCC 7966
+VFG038916(gb|YP_855895),rtxB,"RTX toxin transporter, ATPase protein",Aeromonas hydrophila subsp. hydrophila ATCC 7966
+VFG038917(gb|YP_855894),rtxD,"RTX toxin transporter, transmembrane protein linking with the outer membrane porin TolC",Aeromonas hydrophila subsp. hydrophila ATCC 7966
+VFG038918(gb|YP_855893),rtxE,"RTX toxin transporter, ATPase protein",Aeromonas hydrophila subsp. hydrophila ATCC 7966
+VFG000676(gb|AAD32411),lef,anthrax toxin lethal factor precursor,Bacillus anthracis str. Sterne
+VFG000677(gb|AAD32414),pagA,"anthrax toxin moiety, protective antigen",Bacillus anthracis str. Sterne
+VFG000678(gb|AAD32426),cya,"calmodulin sensitive adenylate cyclase, edema factor",Bacillus anthracis str. Sterne
+VFG016223(gb|NP_977531),cytK,cytotoxin K CytK,Bacillus cereus ATCC 10987
+VFG016270(gb|NP_978284),nheA,non-hemolytic enterotoxin A,Bacillus cereus ATCC 10987
+VFG016278(gb|NP_978285),nheB,non-hemolytic enterotoxin B,Bacillus cereus ATCC 10987
+VFG016286(gb|NP_978286),nheC,non-hemolytic enterotoxin C,Bacillus cereus ATCC 10987
+VFG000011(gb|NP_882282),ptxA,pertussis toxin subunit 1 precursor ,Bordetella pertussis Tohama I
+VFG000012(gb|NP_882283),ptxB,pertussis toxin subunit 2 precursor,Bordetella pertussis Tohama I
+VFG000013(gb|NP_882284),ptxD,pertussis toxin subunit 4 precursor,Bordetella pertussis Tohama I
+VFG000014(gb|NP_882285),ptxE,pertussis toxin subunit 5 precursor,Bordetella pertussis Tohama I
+VFG000015(gb|NP_882286),ptxC,pertussis toxin subunit 3 precursor,Bordetella pertussis Tohama I
+VFG000026(gb|NP_881965),dnt,dermonecrotic toxin Dnt,Bordetella pertussis Tohama I
+VFG001932(gb|NP_281290),cdtC,cytolethal distending toxin C,Campylobacter jejuni subsp. jejuni NCTC 11168
+VFG001933(gb|NP_281291),cdtB,cytolethal distending toxin B,Campylobacter jejuni subsp. jejuni NCTC 11168
+VFG001934(gb|NP_281292),cdtA,cytolethal distending toxin A,Campylobacter jejuni subsp. jejuni NCTC 11168
+VFG002274(gb|NP_560952),plc,phospholipase C alpha-toxin,Clostridium perfringens str. 13
+VFG002275(gb|NP_561079),pfoA,perfringolysin O theta-toxin/PFO,Clostridium perfringens str. 13
+VFG002276(gb|NP_561089),colA,collagenase kappa-toxin,Clostridium perfringens str. 13
+VFG002277(gb|NP_561107),nagH,hyaluronidase mu-toxin,Clostridium perfringens str. 13
+VFG002278(gb|NP_561797),nagI,hyaluronidase mu-toxin,Clostridium perfringens str. 13
+VFG002279(gb|NP_562150),nagJ,hyaluronidase mu-toxin,Clostridium perfringens str. 13
+VFG002280(gb|NP_562195),nagK,hyaluronidase mu-toxin,Clostridium perfringens str. 13
+VFG002281(gb|NP_562439),nagL,hyaluronidase mu-toxin,Clostridium perfringens str. 13
+VFG002286(gb|YP_697710),cpe,enterotoxin Cpe CPE,Clostridium perfringens SM101
+VFG002287(gb|YP_001087137),toxA,toxin A TcdA,Clostridium difficile 630
+VFG002288(gb|YP_001087135),toxB,toxin B TcdB,Clostridium difficile 630
+VFG002289(gb|NP_783831),tetX,tetanus toxin tetX TeNT,Clostridium tetani E88
+VFG002290(gb|ZP_02636811),cpb,beta toxin beta-toxin,Clostridium perfringens B str. ATCC 3626
+VFG002291(gb|YP_002291114),ext,epsilon-toxin epsilon-toxin,Clostridium perfringens str. NCTC 8533B4D
+VFG002292(gb|CAA51959),iap,iota toxin component Ia iota-toxin,Clostridium perfringens E str. NCIB 10748
+VFG002293(gb|CAA51960),ibp,iota toxin component Ib iota-toxin,Clostridium perfringens E str. NCIB 10748
+VFG002294(gb|BAA32536),C2I,C2 toxin component-I,Clostridium botulinum C str. 203U28
+VFG002295(gb|BAA32537),C2II,C2 toxin component-II,Clostridium botulinum C str. 203U28
+VFG002296(gb|CAA41768),C3bot1,C3 ADP-ribosyltransferase C3 toxin,Clostridium botulinum D str. 1873
+VFG002297(gb|ABM73982),bont/a,neurotoxin A BoNT,Clostridium botulinum Hall 183 (A391
+VFG002300(gb|CAA88565),tcnA,alpha-toxin alpha-toxin,Clostridium novyi str. ATCC19402
+VFG012122(gb|NP_150010),cpb2,beta2-toxin beta2-toxin,Clostridium perfringens str. 13
+VFG043665(gb|AAA23212),C3bot2,C3 ADP-ribosyltransferase C3 toxin,Clostridium botulinum
+VFG044015(gb|ACN73257),netB,necrotic enteritis toxin B NetB,Clostridium perfringens str. GrE ABAT
+VFG044024(gb|ACA60977),ACA60977,alpha-toxin alpha-toxin,Corynebacterium diphtheriae NCTC 13129
+VFG002198(gb|NP_938615),tox,Diphtheria toxin precursor DT,Corynebacterium diphtheriae NCTC 13129
+VFG000835(gb|NP_288673),stx1A,shiga-like toxin 1 subunit A encoded within prophage CP-933V Stx,Escherichia coli O157:H7 str. EDL933
+VFG000836(gb|NP_288672),stx1B,shiga-like toxin 1 subunit B encoded within prophage CP-933V Stx,Escherichia coli O157:H7 str. EDL933
+VFG000837(gb|NP_286976),stx2A,shiga-like toxin II A subunit encoded by bacteriophage BP-933W Stx,Escherichia coli O157:H7 str. EDL933
+VFG000838(gb|NP_286977),stx2B,shiga-like toxin II B subunit encoded by bacteriophage BP-933W Stx,Escherichia coli O157:H7 str. EDL933
+VFG000840(gb|YP_325608),hlyA,hemolysin toxin protein Hemolysin,Escherichia coli O157:H7 str. EDL933
+VFG000845(gb|YP_325655),toxB,cytotoxin ToxB,Escherichia coli O157:H7 str. EDL933
+VFG000859(gb|YP_006098866),set1A,toxin subunit Set1A ShET1,Escherichia coli O44:H18 042
+VFG000860(gb|YP_006098865),set1B,toxin subunit Set1B ShET1,Escherichia coli O44:H18 042
+VFG000863(gb|BAA94855),astA,heat-stable enterotoxin 1 EAST1,Escherichia coli O44:H18 042
+VFG000902(gb|NP_755494),sat,Aecreted auto transpoter toxin Sat,Escherichia coli CFT073
+VFG002037(gb|AAA24685),eltA,heat-labile enterotoxin A prepeptide,Escherichia coli
+VFG002038(gb|AAA98064),eltB,enterotoxin subunit B,Escherichia coli
+VFG002039(gb|YP_003294006),estIa,heat stable enterotoxin I Heat-stable toxin,Escherichia coli O78:H11:K80 str. H10407
+VFG043732(gb|CAD48849),cdtA,cytolethal distending toxin A CDT,Escherichia coli O157:H str. 493/89
+VFG043733(gb|CAD48850),cdtB,cytolethal distending toxin B CDT,Escherichia coli O157:H str. 493/89
+VFG043734(gb|CAD48851),cdtC,cytolethal distending toxin C CDT,Escherichia coli O157:H str. 493/89
+VFG000279(gb|NP_207680),vacA,vacuolating cytotoxin VacA,Helicobacter pylori 26695
+VFG010850(gb|YP_094681),rtxA,structural toxin protein RtxA RtxA,Legionella pneumophila subsp. pneumophila str. Philadelphia 1
+VFG043671(gb|NP_110060),MPN372,CARDS toxin CARDS toxin,Mycoplasma pneumoniae M129
+VFG000115(gb|NP_249839),toxA,exotoxin A precursor ExoA,Pseudomonas aeruginosa PAO1
+VFG020318(gb|NP_456275),cdtB,cytolethal distending toxin B Typhoid toxin,Salmonella enterica subsp. enterica serovar Typhi str. CT18
+VFG001827(gb|YP_406304),senB,enterotoxin ShET2,Shigella flexneri 2a str. 301
+VFG001828(gb|YP_403025),stxA,Shiga toxin subunit A; RNA-N-glycosidase; catalytic subunit Shiga toxin,Shigella dysenteriae Sd197
+VFG001829(gb|YP_403026),stxB,Shiga toxin subunit B precursor Shiga toxin ,Shigella dysenteriae Sd197
+VFG001325(gb|NP_646706),sea,staphylococcal enterotoxin A precursor SE,Staphylococcus aureus subsp. aureus MW2
+VFG001326(gb|NP_646754),selq,staphylococcal enterotoxin G precursor SE,Staphylococcus aureus subsp. aureus MW2
+VFG001327(gb|NP_646755),selk,staphylococcal enterotoxin K precursor SE,Staphylococcus aureus subsp. aureus MW2
+VFG001800(gb|AAA17490),eta,exfoliative toxin A Exfoliative toxin,Staphylococcus aureus ZM
+VFG001801(gb|AAA26628),etb,exfoliative toxin B Exfoliative toxin,Staphylococcus aureus
+VFG001802(gb|AAA88550),seb, staphylococcal enterotoxin B [SE (VF0020,Staphylococcus aureus S6
+VFG001803(gb|NP_644866),seh,staphylococcal enterotoxin H precursor SE,Staphylococcus aureus subsp. aureus MW2
+VFG001807(gb|AAB06195),sed,staphylococcal enterotoxin D precursor SE,Staphylococcus aureus RN4220
+VFG001808(gb|AAA26617),see,staphylococcal enterotoxin E precursor SE,Staphylococcus aureus
+VFG001809(gb|NP_375120),tsst-1,toxic shock syndrome toxin-1 TSST-1,Staphylococcus aureus subsp. aureus N315
+VFG004867(gb|NP_646584),lukD,leukotoxin leukocidin,Staphylococcus aureus subsp. aureus MW2
+VFG004991(gb|NP_645577),sell,staphylococcal enterotoxin L precursor Enterotoxin-like L ,Staphylococcus aureus subsp. aureus MW2
+VFG005009(gb|NP_645576),sec,staphylococcal enterotoxin C precursor Enterotoxin C,Staphylococcus aureus subsp. aureus MW2
+VFG049727(gb|NP_645085.1),esaD,"type VII secretion system secreted protein, a nuclease toxin EsaD [Type VII secretion system (VF0403",Staphylococcus aureus subsp. aureus MW2
+VFG049739(gb|NP_645086.1),esaG1,antitoxin protein EsaG Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049753(gb|NP_645091.1),esaG4,antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049767(gb|NP_645089.1),esaG2,antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049780(gb|NP_645090.1),esaG3, antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049793(gb|NP_645092.1),esaG5,antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049805(gb|NP_645093.1),esaG6,antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049814(gb|NP_645094.1),esaG7,antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049820(gb|NP_645095.1),esaG8,antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG049826(gb|NP_645096.1),esaG9,antitoxin protein EsaG homolog Type VII secretion system,Staphylococcus aureus subsp. aureus MW2
+VFG000951(gb|NP_665105),speA,streptococcal exotoxin A precursor - phage associated Spes,Streptococcus pyogenes MGAS315
+VFG000952(gb|NP_269185),speI,streptococcal exotoxin I precursor Spes,Streptococcus pyogenes M1 GAS
+VFG000953(gb|NP_665009),speK,streptococcal exotoxin SpeK - phage associated Spes,Streptococcus pyogenes MGAS315
+VFG000957(gb|NP_607349),speL,streptococcal exotoxin L precursor Spes,Streptococcus pyogenes MGAS8232
+VFG000958(gb|NP_607350),speM,streptococcal exotoxin M precursor Spes,Streptococcus pyogenes MGAS8232
+VFG000973(gb|NP_269985),speB,pyrogenic exotoxin B SpeB,Streptococcus pyogenes M1 GAS
+VFG000978(gb|NP_268943),speC,"streptococcal exotoxin C precursor, phage associated Spes",Streptococcus pyogenes M1 GAS
+VFG000979(gb|NP_268582),speG,streptococcal exotoxin G precursor Spes,Streptococcus pyogenes M1 GAS
+VFG000980(gb|NP_268735),speJ,streptococcal exotoxin J precursor Spes,Streptococcus pyogenes M1 GAS
+VFG000981(gb|NP_269959),smeZ,streptococcal mitogenic exotoxin Z Spes,Streptococcus pyogenes M1 GAS
+VFG000982(gb|NP_269186),speH,streptococcal exotoxin H precursor Spes,Streptococcus pyogenes M1 GAS
+VFG000090(gb|NP_230475),tcpH,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000091(gb|NP_230476),tcpA,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000092(gb|NP_230477),tcpB,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000093(gb|NP_230478),tcpQ,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000094(gb|NP_230479),tcpC,toxin-coregulated pilus biosynthesis outer membrane protein TcpC TCP,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000095(gb|NP_230480),tcpR,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000096(gb|NP_230481),tcpD,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000097(gb|NP_230482),tcpS,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000098(gb|NP_230483),tcpT,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000099(gb|NP_230484),tcpE,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000100(gb|NP_230485),tcpF,toxin-coregulated pilus,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000107(gb|NP_231100),ctxA,"cholera enterotoxin, A subunit",Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000108(gb|NP_231099),ctxB,"cholera enterotoxin, B subunit",Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000109(gb|NP_231101),zot,zona occludens toxin Zot ,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000110(gb|NP_231102),ace,accessory cholera enterotoxin Ace,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000983(gb|NP_231094),rtxA,RTX toxin RtxA,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG002091(gb|NP_232524),vgrG-3,"type VI secretion system effector VgrG-3 protein, lysozyme-like activity, VgrG-3 and TsaB are a toxin-antitoxin complex",Vibrio cholerae O1 biovar El Tor str. N16961
+VFG007020(gb|NP_231093),rtxC,RTX toxin activating protein RtxC RTX toxin,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG007023(gb|NP_231091),rtxB,RTX toxin transporter RtxB RTX toxin,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG007027(gb|NP_231090),rtxD,RTX toxin transporter RtxD RTX toxin,Vibrio cholerae O1 biovar El Tor str. N16961
+VFG000422(gb|NP_395420),ymt,murine toxin Ymt,Yersinia pestis CO92
+VFG002155(gb|AAA18472),ystA,enterotoxin Yst,Yersinia enterocolitica W1024
+VFG002156(gb|BAA13544),ystB,Yersinia heat-stable enterotoxin Type B Yst,Yersinia enterocolitica str. 84-50
+VFG045347(gb|YP_001006237),yaxA,cytotoxin YaxA YaxAB,Yersinia enterocolitica subsp. enterocolitica 8081
+VFG045348(gb|YP_001006238),yaxB,cytotoxin YaxB YaxAB,Yersinia enterocolitica subsp. enterocolitica 8081
