@@ -35,7 +35,6 @@ We then used linear mixed effect model analysis to identify the species signific
 `Rscript volcano_plot.Rmd`
 
 ### Analyses on global datasets
-The analyses below refer to the full set of data (n=42,814). 
 
 #### 4. *C. difficile* prevalence 
 Here we track *C. difficile* prevalence over lifetime, across geographical locations, in healthy as well as in diseased subjects. We also investigated *C. difficile* carriage in different host species.
