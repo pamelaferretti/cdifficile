@@ -4,7 +4,7 @@
 
 ## Requirements
 
-This project requires R version 3.5.1
+This project requires R version 3.5.1   
 To be sure that you have all required packages installed you can run:
 
 `Rscript requirements.R`
