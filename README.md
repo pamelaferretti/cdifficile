@@ -15,9 +15,9 @@ The first part of the analysis workflow focuses on studying *C. difficile* in pu
 The second part aims at investigating *C. difficile* outside of the traditionally studied nosocomial and CDI-related context, by including a much larger set of public metagenomic CDI datasets (n=253, total samples 42,814). 
 
 #### Important preliminary notes
-The metadata for the whole set of 42,814 samples is available as Suppl. table 4 in the preprint and in `/data` under the name `metadata.csv`. 92.86% of these samples passed the initial filtering step on read counts (see Methods section in the preprint for details), leaving 39,502 samples, of which 26,784 were human fecal metagenomes, for downstream analysis.
+The metadata for the whole set of 42,814 samples is available as `Suppl. table 4` in the preprint and in `/data` under the name `metadata.csv`. 92.86% of these samples passed the initial filtering step on read counts (see Methods section in the preprint for details), leaving 39,502 samples, of which 26,784 were human fecal metagenomes, for downstream analysis.
 
-In order to avoid under- or over-estimating *C. difficile* prevalence, only one sample per time series was used in cross-sectional analyses (see Methods section in the preprint for details), in a process here referred to as timeseries dereplication. The metadata for the filtered samples are available as Suppl. table 5 in the preprint or in `/data` under the name `metadata_timeseries_dereplicated.csv`. All downstream analyses are based on the timeseries-dereplicated set of samples (aka using `metadata_timeseries_dereplicated.csv` and selecting only samples satysfying the criterium `final_representative=="Yes"`), unless differently specified.  
+In order to avoid under- or over-estimating *C. difficile* prevalence, only one sample per time series was used in cross-sectional analyses (see Methods section in the preprint for details), in a process here referred to as timeseries dereplication. The metadata for the filtered samples are available as `Suppl. table 5` in the preprint or in `/data` under the name `metadata_timeseries_dereplicated.csv`. All downstream analyses are based on the timeseries-dereplicated set of samples (aka using `metadata_timeseries_dereplicated.csv` and selecting only samples satysfying the criterium `final_representative=="Yes"`), unless differently specified.  
 
 ### Analyses on CDI datasets
 
@@ -30,14 +30,14 @@ Here we investigate prevalence and relative abundance of *C. difficile*, as well
 #### 2. LASSO model
 To identify the microbial signature associated with CDI we trained a series of LASSO-regularised logistic regression models in a leave-one-study-out validation approach.
 
-`Rscript lasso_modelling.Rmd` 
+`Rscript lasso_modelling.Rmd`  
 `Rscript lasso_auc.Rmd` 
 
 #### 3. Linear mixed effect and ANOVA
 We then used linear mixed effect model analysis to identify the species significantly enriched or depleted in terms of relative abundance in CDI compared to diseased and healthy controls.
 
 `Rscript src_rem_testing.Rmd`  
-`Rscript volcano_plot.Rmd`
+`Rscript volcano_plot.Rmd`   
 `Rscript anova.Rmd`
 
 ### Analyses on global datasets
@@ -64,6 +64,8 @@ Here we leveraged the available longitudinal data to investigate when *C. diffic
 `Rscript timeseries_appearance.Rmd`
 
 #### 8. Mother-infant microbial similarity
-Here we calculated beta diversity (Bray-Curtis index) to identify community similarity between infant-mother pairs, divided by C. difficile presence.  
+Here we calculated beta diversity (Bray-Curtis index) to identify community similarity between infant-mother pairs, divided by *C. difficile* presence.  
 
 `Rscript Bray_Curtis_Cdiff.Rmd`
+
+
