@@ -1,7 +1,6 @@
 ---
 title: "C. difficile toxin genes detection analysis - CDI samples only"
 output: html_document
-#modified and extended by Pamela Ferretti
 ---
 
 ```{r setup, include=FALSE}
@@ -19,13 +18,12 @@ library("ggdendro")
 library("reshape2")
 library("grid")
 library(magrittr)
-library("ggrepel") #Avoid overlapping labels
+library("ggrepel")
 library(cowplot)
 ```
 
 #Load data and metadata files
 ```{r}
-
 metadata_file.splittedCDI <- read_csv("../../data/CDI/CDI_and_splittedControl_samples.csv",
                           col_types = cols_only(
                             Samples = col_character(),
@@ -36,18 +34,9 @@ metadata_file.splittedCDI <- read_csv("../../data/CDI/CDI_and_splittedControl_sa
                             Age_group = col_factor(), 
                             Age_months = col_character(), 
                             Status = col_factor(), 
-                            Premature = col_factor(),
-                            Delivery_mode = col_factor(),
-                            West = col_factor(),
-                            Geography = col_factor(), 
-                            Continent = col_factor(), 
-                            Sex = col_factor(),
-                            Abx = col_factor(), 
                             CDI = col_factor(), 
                             Cdiff = col_factor(),
-                            subject_disease_status = col_character(),
                             final_representative = col_character(), 
-                            diet = col_character(),
                             group = col_character(),
                             total_MG_coverage = col_number()
 ))
@@ -72,7 +61,6 @@ toxin.all.unfiltered <- left_join(toxin_file, toxin_species, by="Toxin_ID")
 threshold_min_reads = 10
 toxin.all <- toxin.all.unfiltered %>%
   filter(Raw >= threshold_min_reads)
-
 ```
 
 #color palette
@@ -82,9 +70,7 @@ colors <- c("darkred",'#BDBDBD', "#424242")
 ```
 
 ```{r}
-
 species_target <- c("Shigella flexneri","Escherichia coli","Clostridium perfringens","Clostridium difficile","Staphylococcus aureus","Pseudomonas aeruginosa","Aeromonas veronii","Campylobacter jejuni","Vibrio cholerae")
-
 ```
 
 ```{r}
@@ -130,15 +116,12 @@ upset <- ComplexUpset::upset(tox.overview,
 )
 
 upset
-
 ```
 
 
 ```{r}
-
 pdf(file=paste0("../../figures/toxin_genes_detection/upset.pdf"), width=12, height=6)
 upset
 dev.off()
-
 ```
 
