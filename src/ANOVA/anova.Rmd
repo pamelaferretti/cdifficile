@@ -362,3 +362,10 @@ for (i in idx_adult) {
 }
 ```
 
+#LME to test association between Cdiff and total MG coverage
+
+```{r}
+library("lmerTest")
+fit <- lmer(total_MG_coverage~Cdiff+(1|Study), data=metadata_file)
+summary(fit)
+```
