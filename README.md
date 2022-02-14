@@ -30,14 +30,15 @@ Here we investigate prevalence and relative abundance of *C. difficile*, as well
 #### 2. LASSO model
 To identify the microbial signature associated with CDI we trained a series of LASSO-regularised logistic regression models in a leave-one-study-out validation approach.
 
+`Rscript custom_data_split.R`  
 `Rscript lasso_modelling.Rmd`  
-`Rscript lasso_auc.Rmd` 
+`Rscript lasso_auc.Rmd`  
 
 #### 3. Linear mixed effect and ANOVA
 We then used linear mixed effect model analysis to identify the species significantly enriched or depleted in terms of relative abundance in CDI compared to diseased and healthy controls.
 
 `Rscript src_rem_testing.Rmd`  
-`Rscript volcano_plot.Rmd`   
+`Rscript volcano_plot.R`   
 `Rscript anova.Rmd`
 
 ### Analyses on global datasets
