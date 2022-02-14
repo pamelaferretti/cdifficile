@@ -63,7 +63,6 @@ if (file.exists(filename)) {
 } else {
     
   #Calculate rarefied alpha diversities
-  #on an entire count table (taxa as rows, samples as columns) of absolute (!) counts - estimated time for denovo calculation 40min
   #alpha div measures are replaced by NA for undersampled samples (see script)
   alpha.frame <- Hill_Diversity.rarefied(
     count_table_filtered, 

@@ -37,22 +37,13 @@ metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv",
                             Age_group = col_factor(), 
                             Age_months = col_character(), 
                             Status = col_factor(), 
-                            Premature = col_factor(),
-                            Delivery_mode = col_factor(),
-                            West = col_factor(),
-                            Geography = col_factor(), 
-                            Continent = col_factor(), 
-                            Sex = col_factor(),
-                            Abx = col_factor(), 
                             CDI = col_factor(), 
                             Cdiff = col_factor(),
                             subject_disease_status = col_character(),
                             final_representative = col_character(), 
-                            diet = col_character(),
                             final_representative = col_character(),
                             sum_base_count = col_character(),
-                            total_MG_coverage = col_integer(),
-                            Cdiff_tox = col_factor()
+                            total_MG_coverage = col_integer()
 ))
 
 ```
