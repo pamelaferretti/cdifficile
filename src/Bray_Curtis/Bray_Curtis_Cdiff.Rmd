@@ -33,18 +33,8 @@ metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv",
                             Age_group = col_factor(), 
                             Age_months = col_character(), 
                             Status = col_factor(), 
-                            Premature = col_factor(),
-                            Delivery_mode = col_factor(),
-                            West = col_factor(),
-                            Geography = col_factor(), 
-                            Continent = col_factor(), 
-                            Sex = col_factor(),
-                            Abx = col_factor(), 
-                            CDI = col_factor(), 
                             Cdiff = col_factor(),
-                            subject_disease_status = col_character(),
                             final_representative = col_character(), 
-                            diet = col_character(),
                             Mother_infant_coupleID = col_character()
 ))
 ```
@@ -219,7 +209,8 @@ for (unique_coupleID in distinct_vector){
 
 collect.results.metadata <- left_join(collect.results, 
                                       (metadata_file.unique_coupleID %>% 
-                                         select(Samples, Age_months, Age_group, Status, Premature, Delivery_mode, Geography, Continent, Cdiff, study_Mother_infant_coupleID, age_plot_range)), 
+                                         select(Samples, Age_months, Age_group, Status, 
+                                                Cdiff, study_Mother_infant_coupleID, age_plot_range)), 
                                       by = c("s2.infant" = "Samples")) 
    
 collect.results.metadata <- collect.results.metadata %>% 
