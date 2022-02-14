@@ -1,5 +1,5 @@
 ---
-title: "ANOVA and glm analysis"
+title: "ANOVA, glm and LME analysis"
 output: html_document
 ---
 
@@ -16,8 +16,8 @@ library(car)
 library(margins)
 library(gridExtra)
 library(broom)
-#get Rsquared from glm output
 library(rsq) 
+library("lmerTest")
 ```
 
 # load and manipulate data
@@ -33,24 +33,14 @@ metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv",
                             Status = col_factor(), 
                             Premature = col_factor(),
                             Delivery_mode = col_factor(),
-                            West = col_factor(),
                             Geography = col_factor(), 
-                            Continent = col_factor(), 
                             Sex = col_factor(),
                             Abx = col_factor(), 
                             CDI = col_factor(), 
                             Cdiff = col_factor(),
                             final_representative = col_character(), 
-                            weight_kg = col_double(), 
-                            height_cm = col_double(), 
                             bmi = col_double(), 
                             diet = col_factor(), 
-                            smoker = col_factor(), 
-                            Gestational_approximated_weeks = col_double(), 
-                            abx_at_birth = col_factor(), 
-                            Birth_weight = col_double(), 
-                            sum_read_count = col_double(), 
-                            sum_base_count = col_double(),
                             total_MG_coverage = col_double()
 ))
 
@@ -280,7 +270,7 @@ glm.cumulative.r.adult.sq.adj <- rsq(glm.cumulative.adult, adj = TRUE) # get adj
 
 #save plots
 ```{r}
-pdf(file=paste0("../../figures/ANOVA/heatmap.p.adj.pdf"), width=10, height=8)
+pdf(file=paste0("../../figures/ANOVA/heatmap_padj.pdf"), width=10, height=8)
 heatmap.combined.allAges.padj
 dev.off()
 ```
@@ -363,9 +353,16 @@ for (i in idx_adult) {
 ```
 
 #LME to test association between Cdiff and total MG coverage
-
 ```{r}
-library("lmerTest")
+#CDI data
+metadata_file_lme_cdi <- read_csv("../../data/CDI/CDI_and_splittedControl_samples.csv")
+fit_cdi <- lmer(total_MG_coverage~Cdiff+(1|Study), data=metadata_file_lme_cdi)
+summary(fit_cdi)
+
+#global data
+metadata_file <- metadata_file %>% 
+  filter(final_representative=="Yes")
+
 fit <- lmer(total_MG_coverage~Cdiff+(1|Study), data=metadata_file)
 summary(fit)
 ```
