@@ -1,0 +1,437 @@
+---
+title: "ML modelling for Cdiff"
+author: "Jakob Wirbel"
+date: "24-03-2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preparations
+
+First, we load the libraries we need:
+```{r message=FALSE, error=FALSE, warning=FALSE}
+library("tidyverse")
+library("SIAMCAT")
+library("here")
+library("pROC")
+library("cowplot")
+```
+
+Then, we can load the data:
+```{r load_data, message=FALSE}
+meta <- read_csv(here('data', 'CDI', 'CDI_mergedControl_samples.csv'))
+feat <- read.table(here('data', 'CDI', 'mOTU20_profiles_filteredCDI.csv'), 
+                   sep=',',  row.names = 1, stringsAsFactors = FALSE, 
+                   header = TRUE)
+feat.rel <- prop.table(as.matrix(feat), 2)
+```
+
+# Data filtering
+
+It makes sense to filter the features all together for all studies combined 
+(at least that's what we saw for the CRC meta-analysis). Therefore, let us
+compute the prevalence for each feature across all studies. Since some studies
+are very small, we can disregard those for the filtering.
+
+```{r filter_1}
+# calculate feature prevalence within each study
+prev.table <- vapply(unique(meta$Study), FUN = function(x){
+  rowMeans(feat.rel[,meta %>% filter(Study==x) %>% pull(Samples)] > 0)
+},FUN.VALUE = double(nrow(feat.rel)))
+# remove studies with less than 20 samples
+
+prev.table <- prev.table[,meta %>% 
+                           group_by(Study) %>% 
+                           tally() %>% 
+                           filter(n > 20) %>% 
+                           pull(Study)]
+
+filtering <- 'global' # can be "normal", "global", or "filt" 
+## not good names, i know
+if (filtering=='normal'){
+  f.idx <- names(which(rowSums(prev.table[,-7] > 0.1) > 2))
+} else if (filtering == 'filt'){
+  # more aggressive filtering
+  f.idx <- names(which(rowSums(prev.table[,-7] > 0.05) > 3))
+} else if (filtering == 'global'){
+  # alternative: global filtering
+  max.ab <- matrixStats::rowMaxs(feat.rel[,meta %>%
+                                            filter(group!='mixed_control') %>%
+                                            pull(Samples)])
+  prev.all <- rowMeans(feat.rel[,meta %>%
+                                  filter(group!='mixed_control') %>%
+                                  pull(Samples)] != 0)
+  
+  f.idx <- intersect(which(max.ab > 1e-03), which(prev.all > 0.1))
+  f.idx <- rownames(feat.rel)[f.idx]
+}
+```
+
+Lastly, we also filter out the unmapped reads:
+```{r filter_2}
+f.idx <- setdiff(f.idx, '-1')
+```
+
+# Training
+
+Now, we can start training SIAMCAT models. We train different models:
+
+- we leave each study out once as independent training set
+- we train a model for each comparison, 
+    - CDI vs mixed_control
+    - CDI vs true_control
+    - mixed_control vs true_control
+- we train a model with Cdiff and one without Cdiff
+
+Wait! it's not so easy after all:
+```{r metadata}
+table(meta$Study, meta$group)
+```
+
+There are not enough studies with mixed_control samples for us to train 
+LOSO models comprehensively. For now, let us ignore mixed_control samples and
+worry about those later. That also means that we have to disregard 
+Vincent_2016 for now, as this study has no `true_control` samples.
+
+Basically, we have a lot of for-loops to take of all these comparisons :)
+    
+```{r train}
+fn.models <- here('data', 'LASSO', paste0('all_models_', filtering,'.RData'))
+if (!file.exists(fn.models)){
+sc.list <- list()
+source(here('src', 'LASSO', 'custom_data_split.R')
+for (group in c('all', 'true_controls')){
+  for (type in c('with_cdiff', 'without_cdiff')){
+    # get training features
+    feat.train <- feat.rel[f.idx,]
+    if (type=='without_cdiff'){
+      idx <- which(str_detect(rownames(feat.train), 'ref_mOTU_v2_0051'))
+      feat.train <- feat.train[-idx,]
+    }
+    
+    # loop through studies
+    for (s in unique(meta$Study)){
+      if (s=='Vincent_2016' & group=='true_controls'){
+        next()
+      }
+      meta.train <- meta %>% 
+        filter(Study!=s) %>% 
+        select(Samples, Study, group)
+      if (group=='true_controls'){
+        meta.train <- meta.train %>% 
+          filter(group %in% c('CDI', 'true_control'))
+      }
+      meta.train <- as.data.frame(meta.train)
+      rownames(meta.train) <- meta.train$Samples
+      sc.obj <- siamcat(feat=feat.train, meta=meta.train, 
+                        label='group', case='CDI', verbose=0)
+      sc.obj <- normalize.features(sc.obj, norm.method = 'log.std', 
+                                   norm.param = list(log.n0=1e-05, sd.min.q=0),
+                                   feature.type = 'original', verbose=0)
+      if (type=='without_cdiff'){
+        data_split(sc.obj) <- data_split(sc.list[[paste0(s,'-with_cdiff-', 
+                                                         group)]])
+      } else {
+        sc.obj <- create.data.split.2(sc.obj, num.folds = 10, num.resample = 5,
+                                      dataset = "Study",verbose=0)
+      }
+      message(paste0(s,'-',type, '-', group))
+      sc.obj <- train.model(sc.obj, method = 'lasso')
+      sc.list[[paste0(s,'-',type, '-', group)]] <- sc.obj
+    }
+  }
+}
+save(sc.list, file = fn.models)} else {load(fn.models)}
+```
+
+# Evaluate
+
+```{r evaluate, warning=FALSE}
+auc.list <- tibble(left.out=character(0), auroc=double(0), 
+                   n=integer(0), type=character(0), group=character(0))
+pred.all <- list()
+for (group in c('all', 'true_controls')){
+  pred.all[[group]] <- list()
+  for (type in c('with_cdiff', 'without_cdiff')){
+    pred.all[[group]][[type]] <- list()
+    for (s in unique(meta$Study)){
+      if (s=='Vincent_2016' & group=='true_controls'){
+        next()
+      }
+      meta.test <- meta %>% 
+        filter(Study==s) %>% 
+        select(Samples, Study, group)
+      meta.test <- as.data.frame(meta.test)
+      rownames(meta.test) <- meta.test$Samples
+      sc.obj <- siamcat(feat=feat.rel, meta=meta.test, verbose=0)
+      message(paste0(s, '-', type, '-', group))
+      sc.obj.trained <- sc.list[[paste0(s, '-', type, '-', group)]]
+      sc.obj <- make.predictions(sc.obj.trained, sc.obj, verbose=0)  
+      res <- meta.test %>% 
+        left_join(enframe(rowMeans(pred_matrix(sc.obj)), 
+                          name = 'Samples', value = 'pred'),
+                  by='Samples')
+      pred.all[[group]][[type]][[s]] <- res
+      # calculate AUC
+      if (group=='all'){
+        res <- res %>% 
+          mutate(group=case_when(group=='CDI'~'CDI', TRUE~'true_control'))
+      } else {
+        res <- res %>% 
+          filter(group %in% c('CDI', 'true_control'))
+      }
+      loso.auc <- auc(predictor=res$pred, response=res$group,
+                    levels=c('true_control', 'CDI'), direction='<')
+      auc.list <- auc.list %>% 
+        add_row(left.out=s, type=type, auroc=as.double(loso.auc),
+                n=nrow(res), group=group)
+    }
+  }
+}
+
+```
+
+Since the studies are of very different size, it could make sense to 
+evaluate all data together:
+```{r eval_2}
+
+for (group in c('all', 'true_controls')){
+  for (type in c('with_cdiff', 'without_cdiff')){
+    pred.temp <- bind_rows(pred.all[[group]][[type]]) %>% 
+      mutate(group=case_when(group=='CDI'~'CDI', TRUE~'ctr'))
+    auc.all <- auc(predictor=pred.temp$pred, response=pred.temp$group,
+                    levels=c('ctr', 'CDI'), direction='<')
+    auc.list <- auc.list %>% 
+      add_row(left.out='all', auroc=as.double(auc.all), 
+              n=nrow(pred.temp),
+              type=type, group=group)
+    
+  }
+}
+write_tsv(auc.list, file=here('data', 'LASSO', 
+                              paste0('results_auc_', filtering, '.tsv')))
+```
+
+
+#  Plot evaluation
+
+```{r plot_auroc_values}
+auc.list %>% 
+  mutate(s=left.out=='all') %>% 
+  ggplot(aes(x=type, y=auroc)) + 
+    geom_point(aes(size=n, shape=s)) + 
+    geom_line(aes(group=left.out))  +
+    xlab('') + ylab('AUROC') + 
+    theme_bw() +
+    theme(panel.grid.minor=element_blank()) +
+    ylim(0.5, 1) +
+    facet_grid(~group) + 
+    scale_shape_manual(values=c(16, 5), guide=FALSE)
+```
+
+
+# Heatmap
+
+With the resulting models, we can create a heatmap of the most 
+predictive features.
+
+First, we extract the feature weights from the siamcat models:
+
+```{r heatmap_1}
+
+for (type in c('with_cdiff', 'without_cdiff')){
+  for (group in c('all', 'true_controls')){
+n <- names(sc.list)
+n <- n[str_detect(n, paste0(type, '-', group))]
+  
+
+feat.weights <- map(n, .f = function(x){
+  temp <- feature_weights(sc.list[[x]]) %>% as_tibble(rownames = 'species')
+  return(temp %>% select(species, mean.rel.weight))}) %>% 
+  bind_rows(.id='Study')
+
+feat.mat <- feat.weights %>% 
+  pivot_wider(names_from = Study, values_from = mean.rel.weight) %>% 
+  as.data.frame()
+rownames(feat.mat) <- feat.mat$species
+feat.mat$species <- NULL
+feat.mat <- as.matrix(feat.mat)
+
+# same for robustness
+feat.robust <- map(n, .f = function(x){
+  temp <- feature_weights(sc.list[[x]]) %>% as_tibble(rownames = 'species')
+  return(temp %>% select(species, percentage))}) %>% 
+  bind_rows(.id='Study')
+
+feat.robust <- feat.robust %>% 
+  pivot_wider(names_from = Study, values_from = percentage) %>% 
+  as.data.frame()
+rownames(feat.robust) <- feat.robust$species
+feat.robust$species <- NULL
+feat.robust <- as.matrix(feat.robust)
+
+
+# Now, we can select, which species we want to show
+
+temp <- rowMeans(feat.robust)
+# here, we have to choose a useful cutoff
+temp <- temp[temp > 0.8]
+print(length(temp))
+
+
+# That seems like a reasonable number. Now, we can visualize these features  -->
+# together with their weights. First, we order them according to their mean  -->
+# weight across the different models and make a heatmap showing those: -->
+
+
+mean.feat.weight <- rowMeans(feat.mat)
+mean.feat.weight <- mean.feat.weight[names(temp)]
+mean.feat.weight <- sort(-mean.feat.weight)
+names.short <- str_remove(names(mean.feat.weight), '\\[(ref|meta)_mOTU_v2_')
+names.short <- str_remove(names.short, '\\]')
+
+df.assoc <- read_tsv(here('files', 'CDI','random_effect_model_results.tsv'))
+
+temp <- feat.weights %>% 
+  filter(species %in% names(mean.feat.weight)) %>% 
+  left_join(df.assoc, by='species') %>% 
+  mutate(species=factor(species, levels = names(mean.feat.weight)))
+g.1 <- temp %>% 
+  ggplot(aes(x=-mean.rel.weight, y=species)) +
+    geom_boxplot()
+g.2 <- temp %>% 
+  select(species, effect.size) %>% 
+  distinct() %>% 
+  ggplot(aes(x=effect.size, y=species)) + 
+    geom_bar(stat='identity') +
+    theme(axis.text.y=element_blank())
+plot_grid(g.1, g.2, align = 'h', rel_widths = c(0.75, 0.25))
+
+
+df.heat.1 <- feat.mat[names(mean.feat.weight),] %>% 
+  as_tibble(rownames = 'species') %>% 
+  mutate(species=str_remove(species, '\\[(ref|meta)_mOTU_v2_')) %>% 
+  mutate(species=str_remove(species, '\\]')) %>% 
+  mutate(species=factor(species, levels = names.short)) %>% 
+  pivot_longer(-species, names_to = 'Study', values_to = 'feat.weight') %>% 
+  mutate(feat.weight=-feat.weight)
+
+g1 <- df.heat.1 %>% 
+  ggplot(aes(y=species, x=feat.weight)) +
+    geom_boxplot() + 
+    xlab('Feature weights across studies') + ylab('') + 
+    theme_bw() + 
+    theme(panel.grid.minor = element_blank())
+
+# Now we plot the real values across samples. Here, we need the mean prediction 
+# across all models for all samples for sample ordering.
+
+
+pred.samples <- pred.all[[group]][[type]] %>% 
+  bind_rows()
+  
+if (group=='true_controls'){
+  meta.test <- meta %>% 
+    filter(Study=='Vincent_2016') %>% 
+    select(Samples, Study, group)
+  meta.test <- as.data.frame(meta.test)
+  rownames(meta.test) <- meta.test$Samples
+  sc.obj <- siamcat(feat=feat.rel, meta=meta.test, verbose=0)
+  pred.vincent <- list()
+  for (n.i in n){
+    sc.obj.trained <- sc.list[[n.i]]
+    sc.obj <- make.predictions(sc.obj.trained, sc.obj, verbose=0) 
+    pred.vincent[[n.i]] <- rowMeans(pred_matrix(sc.obj)) %>% 
+      enframe(name='Samples', value='pred')
+  }
+  temp <- pred.vincent %>% 
+    bind_rows() %>% 
+    group_by(Samples) %>% 
+    summarise(pred=mean(pred), .groups='drop') %>% 
+    left_join(meta %>% select(Samples, Study, group), by='Samples')
+  pred.samples <- pred.samples %>% 
+    bind_rows(temp)
+}
+pred.samples <- pred.samples %>% 
+  mutate(group=factor(group, levels = c('true_control', 
+                                        'mixed_control', 'CDI'))) %>% 
+  arrange(group, pred)
+df.heat.2 <- feat.rel[names(mean.feat.weight),pred.samples$Samples]
+df.heat.2 <- log10(df.heat.2 + 1e-05)
+df.heat.2 <- (df.heat.2 - rowMeans(df.heat.2))/matrixStats::rowSds(df.heat.2)
+df.heat.2[df.heat.2 > 3] <- 3
+df.heat.2[df.heat.2 < -3] <- -3
+
+df.heat.2 <- df.heat.2 %>% 
+  as_tibble(rownames = 'species') %>% 
+  mutate(species=str_remove(species, '\\[(ref|meta)_mOTU_v2_')) %>% 
+  mutate(species=str_remove(species, '\\]')) %>% 
+  mutate(species=factor(species, levels = names.short)) %>% 
+  pivot_longer(-species, values_to = 'ab', names_to = 'sample') %>% 
+  mutate(sample=factor(sample, levels = pred.samples$Samples))
+
+
+color.scheme <-rev(colorRampPalette(
+  RColorBrewer::brewer.pal(RColorBrewer::brewer.pal.info["BrBG", "maxcolors"],
+                         "BrBG"))(100))
+
+g2 <- df.heat.2 %>% 
+  ggplot(aes(x=sample, y=species, fill=ab)) + 
+    geom_tile() + 
+    xlab('samples') + ylab('') + 
+    theme_bw() +
+    theme(panel.grid = element_blank(), axis.text = element_blank(), 
+          axis.ticks = element_blank()) + 
+    scale_fill_gradientn(colours = color.scheme,
+                         limits=c(-3, 3))
+
+# Finally, we plot additional info (like the mean prediction for all samples)
+
+df.plot.3 <- pred.samples %>%
+  left_join(meta %>% select(Samples, Age_group, Sex, West), by='Samples') %>% 
+  mutate(Samples=factor(Samples, levels=Samples))
+
+g3.pred <- df.plot.3 %>% 
+  ggplot(aes(x=Samples, y=1, fill=pred)) + 
+    geom_tile() + 
+    theme_bw() + 
+    theme(axis.text = element_blank(), panel.grid = element_blank(),
+          axis.ticks = element_blank()) + 
+    xlab('') + ylab("") + 
+    scale_fill_gradient2(limits=c(0, 1), low='white', high='black', guide=FALSE)
+
+g3.group <- df.plot.3 %>% 
+  ggplot(aes(x=Samples, y=1, fill=group)) + 
+    geom_tile() +
+    theme_bw() + 
+    theme(axis.text = element_blank(), panel.grid = element_blank(),
+          axis.ticks = element_blank()) + 
+    xlab('') + ylab("") + 
+    scale_fill_manual(values=c('true_control'='#2C5AA0', 
+                               'mixed_control'='#AFC6E9', 
+                               'CDI'='#D45500'), guide=FALSE)
+
+g3.study <- df.plot.3 %>% 
+  ggplot(aes(x=Samples, y=1, fill=Study)) + 
+    geom_tile() + 
+    theme_bw() + 
+    theme(axis.text = element_blank(), panel.grid = element_blank(),
+          axis.ticks = element_blank()) + 
+    xlab('') + ylab("") + 
+    scale_fill_manual(values=RColorBrewer::brewer.pal(12, 'Set3'))
+
+g <- plot_grid(g1, g2,
+          NULL, g3.pred,
+          NULL, g3.group,
+          NULL, g3.study, 
+          ncol=2, rel_widths = c(0.4, 0.6),
+          rel_heights = c(0.7, 0.1, 0.1, 0.1))
+ggsave(g, filename = here('figures', 'LASSO', 
+                          paste0('heatmap-', group, '-', 
+                                 type, '_', filtering, '.pdf')),
+       width = 26, height = 14, useDingbats=FALSE)
+}}
+```
