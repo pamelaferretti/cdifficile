@@ -14,7 +14,7 @@ To be sure that you have all required packages installed you can run:
 The first part of the analysis workflow focuses on studying *C. difficile* in public metagenomic CDI datasets (n=10, total samples 534). 
 The second part aims at investigating *C. difficile* outside of the traditionally studied nosocomial and CDI-related context, by including a much larger set of public metagenomic CDI datasets (n=253, total samples 42,814). 
 
-#### Important preliminary note
+#### Important preliminary notes
 The metadata for the whole set of 42,814 samples is available as Suppl. table 4 in the preprint and in `/data` under the name `metadata.csv`. 92.86% of these samples passed the initial filtering step on read counts (see Methods section in the preprint for details), leaving 39,502 samples, of which 26,784 were human fecal metagenomes, for downstream analysis.
 
 Furthermore, in order to avoid under- or over-estimating *C. difficile* prevalence, only one sample per time series was used in cross-sectional analyses (see Methods section in the preprint for details), in a process here referred to as timeseries dereplication. The metadata for the filtered samples are available as Suppl. table 5 in the preprint or in `/data` under the name `metadata_timeseries_dereplicated.csv`. All downstream analyses are based on the timeseries-dereplicated set of samples (aka using `metadata_timeseries_dereplicated.csv` and selecting only samples satysfying the criterium `final_representative=="Yes"`), unless differently specified.  
