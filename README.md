@@ -5,7 +5,7 @@
 ## Requirements
 
 This project requires R version 3.5.1   
-To be sure that you have all required packages installed you can run:
+To install all the required packages you can run:
 
 `Rscript requirements.R`
 
@@ -24,49 +24,49 @@ In order to avoid under- or over-estimating *C. difficile* prevalence, only one 
 #### 1. *C. difficile* and other antibiotic-associated diarrhea (AAD) species analysis
 Here we investigate prevalence and relative abundance of *C. difficile*, as well as other bacterial species known to cause CDI-like symptomatology. We also look at the species richness in CDI patients.
 
-`Rscript CDI_analysis.Rmd`  
-`Rscript CDI_richness.Rmd`
+`bin/Rmarkdown src/CDI_analysis/CDI_analysis.Rmd`  
+`bin/Rmarkdown src/CDI_analysis/CDI_richness.Rmd`
 
 #### 2. LASSO model
 To identify the microbial signature associated with CDI we trained a series of LASSO-regularised logistic regression models in a leave-one-study-out validation approach.
 
-`Rscript custom_data_split.R`  
-`Rscript lasso_modelling.Rmd`  
-`Rscript lasso_auc.Rmd`  
+`Rscript src/LASSO/custom_data_split.R`  
+`bin/Rmarkdown src/LASSO/lasso_modelling.Rmd`  
+`bin/Rmarkdown src/LASSO/lasso_auc.Rmd`  
 
 #### 3. Linear mixed effect and ANOVA
 We then used linear mixed effect model analysis to identify the species significantly enriched or depleted in terms of relative abundance in CDI compared to diseased and healthy controls.
 
-`Rscript src_rem_testing.Rmd`  
-`Rscript volcano_plot.R`   
-`Rscript anova.Rmd`
+`bin/Rmarkdown src/CDI_analysis/src_rem_testing.Rmd`  
+`Rscript src/CDI_analysis/volcano_plot.R`   
+`bin/Rmarkdown src/ANOVA/anova.Rmd`
 
 ### Analyses on global datasets
 
 #### 4. *C. difficile* prevalence 
 Here we track *C. difficile* prevalence over lifetime, across geographical locations, in healthy as well as in diseased subjects. We also investigated *C. difficile* carriage in different host species.
 
-`Rscript prevalence.Rmd`
+`bin/Rmarkdown src/prevalence/prevalence.Rmd`
 
 #### 5. Alpha diversity 
 As shown by the results in point 1. (and previous studies in the literature), *C. difficile* in CDI is associated with significant reduction in the gut microbiome species richness. To assess if this holds true also outside of the CDI context, we looked at species richness and evenness in both healthy and diseased subjects of all ages (0-107 yrs). 
 
-`Rscript community_analysis.Rmd`
+`bin/Rmarkdown src/alpha_diversity/community_analysis.Rmd`
 
 #### 6. Species co-occurrence with *C. difficile* 
 As *C. difficile* prevalence and associated community richness differ by age group and health status, we used Fisher's exact test to identify the species co-occurring with *C. difficile* in a significant manner in each age/status category.    
 
-`Rscript FisherTest_coOccurrence.Rmd`  
-`Rscript parsing_plotting.Rmd`
+`bin/Rmarkdown src/co_occurrence/FisherTest_coOccurrence.Rmd`  
+`bin/Rmarkdown src/co_occurrence/parsing_plotting.Rmd`
 
 #### 7. *C. difficile* appearance in timeseries 
 Here we leveraged the available longitudinal data to investigate when *C. difficile* appears for the first time in infancy and early childhood. As using the dereplicated sample set would defy the purpose of this analysis, here we used the full set of samples available from mother-infant couples.
 
-`Rscript timeseries_appearance.Rmd`
+`bin/Rmarkdown src/timeseries_appearance/timeseries_appearance.Rmd`
 
 #### 8. Mother-infant microbial similarity
 Here we calculated beta diversity (Bray-Curtis index) to identify community similarity between infant-mother pairs, divided by *C. difficile* presence.  
 
-`Rscript Bray_Curtis_Cdiff.Rmd`
+`bin/Rmarkdown src/Bray_Curtis/Bray_Curtis_Cdiff.Rmd`
 
 
