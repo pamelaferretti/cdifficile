@@ -24,7 +24,7 @@ library(cowplot)
 
 #Load data and metadata files
 ```{r}
-metadata_file.splittedCDI <- read_csv("../../data/CDI/CDI_and_splittedControl_samples.csv",
+metadata_file.splittedCDI <- read_csv("data/CDI/CDI_and_splittedControl_samples.csv",
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -44,9 +44,9 @@ metadata_file.splittedCDI <- read_csv("../../data/CDI/CDI_and_splittedControl_sa
 metadata_file.splittedCDI <- metadata_file.splittedCDI %>% 
   filter(Host == "Human" & Environment == "Gut" & final_representative == "Yes")
 
-toxin_file <- read_tsv("../../data/toxin_gene_detection/GlobalToxinSurvey_withReadCov.txt")
+toxin_file <- read_tsv("data/toxin_gene_detection/GlobalToxinSurvey_withReadCov.txt")
 
-toxin_species <- read_csv("../../data/toxin_gene_detection/toxins.csv",
+toxin_species <- read_csv("data/toxin_gene_detection/toxins.csv",
                           col_types = cols_only(
                             Toxin_ID = col_factor(),
                             Toxin_name = col_factor(), 
@@ -120,7 +120,7 @@ upset
 
 
 ```{r}
-pdf(file=paste0("../../figures/toxin_genes_detection/upset.pdf"), width=12, height=6)
+pdf(file=paste0("figures/toxin_genes_detection/upset.pdf"), width=12, height=6)
 upset
 dev.off()
 ```

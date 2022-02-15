@@ -26,7 +26,7 @@ library("ggrepel") #Avoid overlapping labels
 #Load metadata table 
 ```{r}
 #after timeseries dereplication: one sample per subject or per timeseries
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -44,7 +44,7 @@ metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv",
 
 #load count table
 ```{r}
-count_file <- read_tsv("../../data/mOTU_counts.tsv")
+count_file <- read_tsv("data/mOTU_counts.tsv")
 ```
 
 #transform count table into abundance table
@@ -73,7 +73,7 @@ for (age in ages){
     abundances_filtered <- abundances %>% 
       select(...1, all_of(samples_target))
     write.csv(abundances_filtered, file = 
-                paste0("../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool", "_", age, "_", status, "_reps.csv"), row.names=FALSE)
+                paste0("data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool", "_", age, "_", status, "_reps.csv"), row.names=FALSE)
   }
 }
 ```
@@ -91,7 +91,7 @@ abundances_filtered <- abundances %>%
   select(...1, all_of(samples_target))
 
 write.csv(abundances_filtered, 
-          file = "../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool_reps.csv", row.names=FALSE)
+          file = "data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool_reps.csv", row.names=FALSE)
 ```
 
 #create incidence table and apply Fisher on each age and health category
@@ -100,7 +100,7 @@ write.csv(abundances_filtered,
 ages <- c("Infant", "Child", "Adolescent", "Adult", "Elderly")
 statuses <- c("Healthy", "Diseased")
 
-input_file <- "../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool"
+input_file <- "data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool"
 for (age in ages){
   for (status in statuses){
 
@@ -158,7 +158,7 @@ for (age in ages){
 
 #create incidence table and apply Fisher on all human gut stool samples
 ```{r}
-input_file <- "../../data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool"
+input_file <- "data/co-occurrence/Fisher_results/all_merged_abundances_human_gut_stool"
 
 input_file_complete <- paste0(input_file,"_reps.csv")
 output_file_complete <-  paste0(input_file,"_reps_resultsBH.csv")

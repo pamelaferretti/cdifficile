@@ -18,7 +18,7 @@ library(rstatix)
 
 #Read metadata Table 
 ```{r}
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -377,7 +377,7 @@ p.diet
 
 #arrange and save plots
 ```{r}
-pdf(file="../../figures/timeseries_appearance/first_appearance_cdiff_allLines.pdf", width=8, height=6)
+pdf(file="figures/timeseries_appearance/first_appearance_cdiff_allLines.pdf", width=8, height=6)
 grid.arrange(p.status, p.delivery, p.prematurity, p.diet, nrow = 2)
 dev.off()
 ```

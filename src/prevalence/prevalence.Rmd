@@ -24,7 +24,7 @@ size_text = 10
 #load and filter metadata table 
 ```{r}
 #after timeseries dereplication: one sample per subject or per timeseries
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -537,7 +537,7 @@ combinations <- ggplot(data=table.plot.term.deliveryMode, aes(x=factor(age_plot_
         axis.title.y = element_text(size= size_text)) +
   ylim(0,100) 
 
-pdf(file="../../figures/prevalence_Cdiff/prevalence_combinations.pdf", width=10, height=6)
+pdf(file="figures/prevalence_Cdiff/prevalence_combinations.pdf", width=10, height=6)
 combinations
 dev.off()
 
@@ -591,7 +591,7 @@ geo_adults <- ggplot(data=map.tmp.all %>% filter(Age_group=="Adult"),
   ylim(0,100)+
   theme(legend.position = "none") 
 
-pdf(file="../../figures/prevalence_Cdiff/prevalence_geography.pdf", width=11, height=4)
+pdf(file="figures/prevalence_Cdiff/prevalence_geography.pdf", width=11, height=4)
 grid.arrange(geo_infants, geo_adults, widths = c(0.5, 0.18), heights = c(1.0, 0.1))
 dev.off()
 
@@ -601,7 +601,7 @@ dev.off()
 
 #create merged panel of plots
 ```{r}
-pdf(file="../../figures/prevalence_Cdiff/figure_4.pdf", width=10, height=8)
+pdf(file="figures/prevalence_Cdiff/figure_4.pdf", width=10, height=8)
 grid.arrange(p0, p1,                                    # bar plot spanning two columns
              p2, p3, p4,                              # box plot and scatter plot
              ncol = 5, nrow = 2, 

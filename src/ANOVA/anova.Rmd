@@ -22,7 +22,7 @@ library("lmerTest")
 
 # load and manipulate data
 ```{r}
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Study = col_factor(), 
                             Environment = col_factor(), 
@@ -270,7 +270,7 @@ glm.cumulative.r.adult.sq.adj <- rsq(glm.cumulative.adult, adj = TRUE) # get adj
 
 #save plots
 ```{r}
-pdf(file=paste0("../../figures/ANOVA/heatmap_padj.pdf"), width=10, height=8)
+pdf(file=paste0("figures/ANOVA/heatmap_padj.pdf"), width=10, height=8)
 heatmap.combined.allAges.padj
 dev.off()
 ```
@@ -355,7 +355,7 @@ for (i in idx_adult) {
 #LME to test association between Cdiff and total MG coverage
 ```{r}
 #CDI data
-metadata_file_lme_cdi <- read_csv("../../data/CDI/CDI_and_splittedControl_samples.csv")
+metadata_file_lme_cdi <- read_csv("data/CDI/CDI_and_splittedControl_samples.csv")
 fit_cdi <- lmer(total_MG_coverage~Cdiff+(1|Study), data=metadata_file_lme_cdi)
 summary(fit_cdi)
 

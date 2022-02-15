@@ -2,8 +2,8 @@
 library("tidyverse")
 library("ggrepel")
 
-df.res <- read_tsv('../../data/CDI/random_effect_model_results.tsv')
-feat.rel.filt <- read.table('../../data/CDI/filtered_data.tsv', sep='\t',
+df.res <- read_tsv('data/CDI/random_effect_model_results.tsv')
+feat.rel.filt <- read.table('data/CDI/filtered_data.tsv', sep='\t',
                             stringsAsFactors = FALSE, check.names = FALSE,
                             quote = '', comment.char = '') %>% 
   as.matrix()
@@ -55,7 +55,7 @@ g <- df.res %>%
     labels=c('Causing CDI-like diarrhea', 'Enriched in CDI', 
              'Depleted in CDI','Other'), name='')
 
-ggsave(g, filename = '../../figures/CDI/lme_volcano_noCDIcdiffPos.pdf', 
+ggsave(g, filename = 'figures/CDI/lme_volcano_noCDIcdiffPos.pdf', 
        width = 12, height = 8,
        useDingbats=FALSE)
 

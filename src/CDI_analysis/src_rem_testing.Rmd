@@ -26,9 +26,9 @@ library("ComplexHeatmap")
 First, we load all the data:
 ```{r load data, message=FALSE}
 # load data
-path_file <- "../../data/CDI/"
-meta.all <- read_csv('../../data/CDI/CDI_mergedControl_samples.csv')
-feat.all <- read.table('../../data/CDI/mOTU20_profiles_filteredCDI.csv',
+path_file <- "data/CDI/"
+meta.all <- read_csv('data/CDI/CDI_mergedControl_samples.csv')
+feat.all <- read.table('data/CDI/mOTU20_profiles_filteredCDI.csv',
                        sep=',', stringsAsFactors = FALSE, check.names = FALSE,
                        comment.char = '', quote = '"', header = TRUE, 
                        row.names = 1)
@@ -198,7 +198,7 @@ df.res <- df.res %>%
   filter(species!='-1') %>% 
   # adjust the p-value for multiple testing
   mutate(p.adj=p.adjust(p.val, method='fdr'))
-write_tsv(df.res, '../../data/CDI/random_effect_model_results.tsv')
+write_tsv(df.res, 'data/CDI/random_effect_model_results.tsv')
 ```
 
 ## Without Cdiff-positive samples
@@ -326,7 +326,7 @@ g <- df.res %>%
       labels=c('C. difficile', 'CDI-similar', 'CDI-enriched', 'CDI-enriched-relevant',
                'CDI-depleted','other'), name='')
 
-ggsave(g, filename = here("../../figures/CDI/", 'cdiff_lme_volcano.pdf'),
+ggsave(g, filename = here("figures/CDI/", 'cdiff_lme_volcano.pdf'),
        width = 10, height = 8,
        useDingbats=FALSE)
 print(g)
@@ -391,7 +391,7 @@ g2 <- df.res.2 %>%
 
 g2
 
-ggsave(g2, filename = here("../../figures/CDI/", 'cdiff_lme_volcano_withoutCdiff.pdf'),
+ggsave(g2, filename = here("figures/CDI/", 'cdiff_lme_volcano_withoutCdiff.pdf'),
        width = 10, height = 8,
        useDingbats=FALSE)
 print(g2)

@@ -21,8 +21,8 @@ library("cowplot")
 
 Then, we can load the data:
 ```{r load_data, message=FALSE}
-meta <- read_csv("../../data/CDI/CDI_mergedControl_samples.csv")
-feat <- read.table("../../data/CDI/mOTU20_profiles_filteredCDI.csv", 
+meta <- read_csv("data/CDI/CDI_mergedControl_samples.csv")
+feat <- read.table("data/CDI/mOTU20_profiles_filteredCDI.csv", 
                    sep=',',  row.names = 1, stringsAsFactors = FALSE, 
                    header = TRUE)
 feat.rel <- prop.table(as.matrix(feat), 2)
@@ -98,10 +98,10 @@ Vincent_2016 for now, as this study has no `true_control` samples.
 Basically, we have a lot of for-loops to take of all these comparisons :)
     
 ```{r train}
-fn.models <- paste0("../../data/LASSO/all_models_", filtering,".RData")
+fn.models <- paste0("data/LASSO/all_models_", filtering,".RData")
 if (!file.exists(fn.models)){
 sc.list <- list()
-source("../../data/LASSO/custom_data_split.R")
+source("data/LASSO/custom_data_split.R")
 for (group in c('all', 'true_controls')){
   for (type in c('with_cdiff', 'without_cdiff')){
     # get training features
@@ -210,7 +210,7 @@ for (group in c('all', 'true_controls')){
     
   }
 }
-write_tsv(auc.list, file= paste0('../../figures/LASSO/results_auc_', filtering, '.tsv'))
+write_tsv(auc.list, file= paste0('figures/LASSO/results_auc_', filtering, '.tsv'))
 ```
 
 
@@ -291,7 +291,7 @@ mean.feat.weight <- sort(-mean.feat.weight)
 names.short <- str_remove(names(mean.feat.weight), '\\[(ref|meta)_mOTU_v2_')
 names.short <- str_remove(names.short, '\\]')
 
-df.assoc <- read_tsv("../../data/CDI/random_effect_model_results.tsv")
+df.assoc <- read_tsv("data/CDI/random_effect_model_results.tsv")
 
 temp <- feat.weights %>% 
   filter(species %in% names(mean.feat.weight)) %>% 
@@ -427,7 +427,7 @@ g <- plot_grid(g1, g2,
           NULL, g3.study, 
           ncol=2, rel_widths = c(0.4, 0.6),
           rel_heights = c(0.7, 0.1, 0.1, 0.1))
-ggsave(g, filename = paste0("../../figures/LASSO/heatmap-", group, '-', 
+ggsave(g, filename = paste0("figures/LASSO/heatmap-", group, '-', 
                                  type, '_', filtering, '.pdf'),
        width = 26, height = 14, useDingbats=FALSE)
 }}

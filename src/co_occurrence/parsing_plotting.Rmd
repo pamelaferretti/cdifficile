@@ -24,7 +24,7 @@ library(cowplot)
 
 #Load taxonomic assignment file
 ```{r}
-dat.taxonomy <- read_delim("../../data/co-occurrence/assignment_files/motus_taxonomy.taxonomy", "\t", 
+dat.taxonomy <- read_delim("data/co-occurrence/assignment_files/motus_taxonomy.taxonomy", "\t", 
                            escape_double = FALSE, trim_ws = TRUE, col_types=cols(
   mOTU_name = col_character(),
   mOTU_ID = col_character(),
@@ -61,7 +61,7 @@ max_non_inf <- function(values) {
 }
 
 #Fisher test results path
-path_fisher_results <- c("../../data/co-occurrence/Fisher_results/")
+path_fisher_results <- c("data/co-occurrence/Fisher_results/")
 
 #function for filtering and parsing data
 filter_my_data <- function(input_file) {
@@ -191,7 +191,7 @@ dendro.plot <- ggdendrogram(rev(test.dendro), rotate = TRUE, size = 4, labels = 
 
 #Load metadata table
 ```{r}
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -239,7 +239,7 @@ scale_y_discrete(limits=rev(order.species.cdiff))
 ```
 
 ```{r}
-pdf(file="../../figures/co-occurrence/heatmap_counts.pdf", width=15, height=15)
+pdf(file="figures/co-occurrence/heatmap_counts.pdf", width=15, height=15)
 plot_grid(heatmap_plot, dendro.plot, counts_plot, NULL,
           nrow = 2,
           align = 'h',
@@ -262,17 +262,17 @@ volcano_plot <- ggplot(master_allages_status %>% filter(prevalence > 0.01),
   guides(colour=FALSE) +
   scale_colour_manual(values = c("white", "#333333"))
 
-pdf(file="../../figures/co-occurrence/volcano_plot.pdf", width=10, height=10)
+pdf(file="figures/co-occurrence/volcano_plot.pdf", width=10, height=10)
 grid.arrange(volcano_plot, nrow = 1)
 dev.off()
 ```
 
 ```{r}
-filtered_counts.raw <- read.csv("../../data/mOTU_counts.tsv", sep = '\t')
+filtered_counts.raw <- read.csv("data/mOTU_counts.tsv", sep = '\t')
 filtered_counts <- filtered_counts.raw %>% 
   dplyr::mutate(X = str_remove(X, 'mOTU_v2_')) 
 
-filtered_metadata <-read.csv("../../data/metadata_timeseries_dereplicated.csv", sep = ',', row.names=1, stringsAsFactors=F)
+filtered_metadata <-read.csv("data/metadata_timeseries_dereplicated.csv", sep = ',', row.names=1, stringsAsFactors=F)
 ```
 
 #Get prevalence data divided by health status
@@ -544,14 +544,14 @@ stat.test <- compare_means(Rho ~ Heatmap_sector, data = results_df.filtered, met
 final_plot <- plot + 
   stat_compare_means(comparisons = my_comparisons, label = "p.signif") 
 
-pdf(file=paste0("../../figures/co-occurrence/spearman_Rho.pdf"), width=8, height=6)
+pdf(file=paste0("figures/co-occurrence/spearman_Rho.pdf"), width=8, height=6)
 final_plot 
 dev.off()
 ```
 
 #Baloon plot (adapted to be a necklace plot)
 ```{r}
-oxygen_table <- read_delim("../../data/co-occurrence/assignment_files/mOTU2.0_features_species_curated.tsv", "\t", col_types=cols(
+oxygen_table <- read_delim("data/co-occurrence/assignment_files/mOTU2.0_features_species_curated.tsv", "\t", col_types=cols(
   mOTU2.0_cluster = col_character(),
   Anaerobic = col_character(),
   Aerotolerant = col_character(),
@@ -668,14 +668,14 @@ final_plot <- plot +
   stat_compare_means(comparisons = my_comparisons, label = "p.signif") 
 final_plot
 
-pdf(file=paste0("../../figures/co-occurrence/suppl_spearman_Rho_single.pdf"), width=8, height=6)
+pdf(file=paste0("figures/co-occurrence/suppl_spearman_Rho_single.pdf"), width=8, height=6)
 final_plot 
 dev.off()
 ```
 
 #combine plots
 ```{r}
-pdf(file="../../figures/co-occurrence/heatmap_oxygen_spearman.pdf", width=27, height=15)
+pdf(file="figures/co-occurrence/heatmap_oxygen_spearman.pdf", width=27, height=15)
 plot_grid(heatmap_plot, dendro.plot, baloon_plot_oxygen, baloon_plot_rho,
           nrow = 1,
           align = 'h',

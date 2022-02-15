@@ -26,7 +26,7 @@ library(gplots)
 
 #Read metadata Table 
 ```{r}
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -79,7 +79,7 @@ mixed.controls <- metadata_file2 %>%
 
 #Combine and save CDI and CONTROL samples
 all_merged <- rbind(CDI, true.controls, mixed.controls) 
-write.csv(all_merged, "../../data/CDI/CDI_and_splittedControl_samples.csv", row.names = FALSE)
+write.csv(all_merged, "data/CDI/CDI_and_splittedControl_samples.csv", row.names = FALSE)
 
 ```
 
@@ -117,7 +117,7 @@ all_merged.all <- left_join(all_merged.counts, all_merged.totals, by = "layer1")
 all_merged.all <- all_merged.all %>% 
   mutate(perc= (count*100)/totals) 
 
-pdf(file="../../figures/CDI/stacked_bars_overview.pdf", width=6, height=3)
+pdf(file="figures/CDI/stacked_bars_overview.pdf", width=6, height=3)
 ggplot(all_merged.all, aes(fill=Cdiff, y=perc, x=layer1)) + 
     geom_bar(position="stack", stat="identity") +
   theme_bw() +
@@ -128,7 +128,7 @@ dev.off()
 
 #load mOTU2.0 count table
 ```{r}
-count_file <- read_tsv("../../data/mOTU_counts.tsv")
+count_file <- read_tsv("data/mOTU_counts.tsv")
 ```
 
 #funtion from counts to abundances
@@ -186,7 +186,7 @@ ha.heatmap = rowAnnotation(df=df.heatmap,
                            col = list(group = group.cols.assigned,
                                       study = study.cols.assigned))
 
-pdf(file="../../figures/CDI/CDI_heatmap.pdf", width=25, height=15)
+pdf(file="figures/CDI/CDI_heatmap.pdf", width=25, height=15)
 
 Heatmap(df.tmp, 
         col = col_fun, 
@@ -450,7 +450,7 @@ otherBugs2 <- plot_prevalences(data.input2, group, prevalence, species, colors, 
 
 otherBugs1
 
-pdf(file="../../figures/CDI/mOTU2_prevalence.pdf", width=10, height=4)
+pdf(file="figures/CDI/mOTU2_prevalence.pdf", width=10, height=4)
 plot_grid(otherBugs1, otherBugs2,
           nrow = 1,
           align = 'h',
@@ -525,7 +525,7 @@ otherBugs_perStudy <- ggplot(collect.results.clean2, aes(fill=group, y=percentag
 
 otherBugs_perStudy
 
-pdf(file="../../figures/mOTU2_prevalence_perStudy.pdf", width=15, height=8)
+pdf(file="figures/mOTU2_prevalence_perStudy.pdf", width=15, height=8)
 grid.arrange(otherBugs_perStudy, nrow = 1)
 dev.off()
 ```
@@ -536,7 +536,7 @@ study.totals <- collect.results.clean %>%
   select(group, Study, total)
 
 #load results from metagenomic reads mapping against VFDB 
-samples.tox <- read_csv("../../data/CDI/samples.tox_rich.csv") 
+samples.tox <- read_csv("data/CDI/samples.tox_rich.csv") 
 metadata_file.tox <- left_join(all_merged_samples, samples.tox, by="Samples")
   
 cdiff.pos.study <- metadata_file.tox %>% 
@@ -561,7 +561,7 @@ toxcdiff <- ggplot(toxcdiff.perStudy, aes(fill=group, y=percentages, x="tox_cdif
   facet_grid(. ~ Study) +
   ylim(0,100)
 
-pdf(file="../../figures/CDI/Cdiff_toxin_genes.pdf", width=15, height=1)
+pdf(file="figures/CDI/Cdiff_toxin_genes.pdf", width=15, height=1)
 grid.arrange(toxcdiff)
 dev.off()
 ```
@@ -626,7 +626,7 @@ boxplot_AAD_relab2 <- ggplot(data = tmp_joined.AllRelAb.long2, mapping = aes(x =
   #coord_flip()
 
 
-pdf(file="../../figures/CDI/boxplot_AAD_relab.pdf", width=10, height=6)
+pdf(file="figures/CDI/boxplot_AAD_relab.pdf", width=10, height=6)
 plot_grid(boxplot_AAD_relab1, boxplot_AAD_relab2,
           nrow = 1,
           align = 'h',
@@ -698,7 +698,7 @@ hist.CDICdiff.plot <- ggplot(tmp_joined.clean.noCDI.merged, aes(y=perc, x=class,
 
 hist.CDICdiff.plot
 
-pdf(file="../../figures/CDI_otherAAD.pdf", width=4, height=8)
+pdf(file="figures/CDI_otherAAD.pdf", width=4, height=8)
 grid.arrange(hist.CDICdiff.plot, nrow = 1)
 dev.off()
 ```

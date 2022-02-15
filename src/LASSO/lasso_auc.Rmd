@@ -24,7 +24,7 @@ library(cowplot)
 #plot AUC values 
 ```{r}
 #load metadata table
-metadata_splitted.file <- read_csv("../../data/CDI/CDI_and_splittedControl_samples.csv")
+metadata_splitted.file <- read_csv("data/CDI/CDI_and_splittedControl_samples.csv")
 
 metadata_splitted.file.totals <- metadata_splitted.file %>% 
   group_by(Study) %>% 
@@ -66,7 +66,7 @@ p3 <- ggplot(all.merged %>% filter(group=="true_controls")) +
   theme_bw() 
 
 #combine and save plot
-pdf(file="../../figures/LASSO/aurocs_perStudy.pdf", width=10, height=4)
+pdf(file="figures/LASSO/aurocs_perStudy.pdf", width=10, height=4)
 plot_grid(p1, p2, p3,
           nrow = 1,
           align = 'h',

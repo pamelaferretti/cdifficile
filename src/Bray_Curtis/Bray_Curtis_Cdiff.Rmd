@@ -21,7 +21,7 @@ library(vegan)
 #Load metadata Table 
 ```{r}
 #after timeseries dereplication: one sample per subject or per timeseries
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -145,7 +145,7 @@ metadata_file2 <-  m_all %>%
 
 #load count table
 ```{r}
-count_file <- read_tsv("../../data/mOTU_counts.tsv")
+count_file <- read_tsv("data/mOTU_counts.tsv")
 ```
 
 #transform count table into abundance table
@@ -323,7 +323,7 @@ bray.allAges.std
 
 #plot results
 ```{r}
-pdf(file="../../figures/Bray_Curtis/bray_curtis.pdf", width=10, height=5)
+pdf(file="figures/Bray_Curtis/bray_curtis.pdf", width=10, height=5)
 grid.arrange(bray.allAges.std, nrow = 1)
 dev.off()
 ```

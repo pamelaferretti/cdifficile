@@ -19,7 +19,7 @@ library("coin")
 
 #Load mOTU counts table
 ```{r }
-count_table<-read.csv("../../data/mOTU_counts.tsv", sep = '\t', row.names=1)
+count_table<-read.csv("data/mOTU_counts.tsv", sep = '\t', row.names=1)
 ```
 
 #filter counts table
@@ -34,7 +34,7 @@ count_table_filtered_t<-data.frame(t(count_table_filtered))
 
 #load metadata table (after timeseries dereplication)
 ```{r}
-meta.data<-read.csv("../../data/metadata_timeseries_dereplicated.csv", sep = ',', stringsAsFactors=F)
+meta.data<-read.csv("data/metadata_timeseries_dereplicated.csv", sep = ',', stringsAsFactors=F)
 rownames(meta.data) <- as.character(meta.data$Samples)
 ```
 
@@ -54,7 +54,7 @@ source("external_scripts/alpha_diversity.R")
 source("external_scripts/rarefaction.R")
 
 #get as R object the alpha diversity results of already computed. 
-filename <- "../../data/alpha_diversity/HillDiv_counts_withMetadata.rds"
+filename <- "data/alpha_diversity/HillDiv_counts_withMetadata.rds"
 
 if (file.exists(filename)) {
   alpha.frame.m <- readRDS(file = filename)
@@ -165,7 +165,7 @@ p1 <- create_boxplot_grid_age(alpha.frame.m.filtered, "Age_group", "Richness", "
 #plot Evenness (for suppl.)
 p2 <- create_boxplot_grid_age(alpha.frame.m.filtered, "Age_group", "evenness", "Cdiff", "Status") 
 
-pdf(file="../../figures/alpha_diversity/richness_age.pdf", width=8, height=3)
+pdf(file="figures/alpha_diversity/richness_age.pdf", width=8, height=3)
 grid.arrange(p1, nrow = 1)
 dev.off()
 ```
@@ -356,7 +356,7 @@ for (age_group in age_group_list) {
 
 #plot species richness by delivery mode, prematurity and geography + species eveness
 ```{r}
-pdf(file="../../figures/alpha_diversity/richness_evenness_suppl.pdf", width=10, height=15)
+pdf(file="figures/alpha_diversity/richness_evenness_suppl.pdf", width=10, height=15)
 grid.arrange(p2, p3, p4, p6, ncol = 1)
 dev.off()
 ```

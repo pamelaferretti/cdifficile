@@ -20,7 +20,7 @@ library(dplyr)
 #Load metadata table 
 ```{r}
 #after timeseries dereplication: one sample per subject or per timeseries
-metadata_file <- read_csv("../../data/metadata_timeseries_dereplicated.csv", 
+metadata_file <- read_csv("data/metadata_timeseries_dereplicated.csv", 
                           col_types = cols_only(
                             Samples = col_character(),
                             Study = col_factor(), 
@@ -241,7 +241,7 @@ counts2 <- ggplot(data=num_studies_drugs, aes(x=subject_disease_status, y=n_stud
 
 #arrange and save combined plots
 ```{r}
-pdf(file="../../figures/disease_association/disease_association.pdf", width=20, height=12)
+pdf(file="figures/disease_association/disease_association.pdf", width=20, height=12)
 grid.arrange(p2a, p2b, counts1, counts2, nrow = 2, widths = c(1.0, 0.15), heights = c(1.0, 0.2))
 dev.off()
 

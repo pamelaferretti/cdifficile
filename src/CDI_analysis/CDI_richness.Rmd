@@ -21,7 +21,7 @@ library(rstatix)
 
 #Load mOTU counts table
 ```{r }
-count_table<-read.csv("../../data/mOTU_counts.tsv", sep = '\t', row.names=1)
+count_table<-read.csv("data/mOTU_counts.tsv", sep = '\t', row.names=1)
 ```
 
 #filter counts table
@@ -36,7 +36,7 @@ count_table_filtered_t<-data.frame(t(count_table_filtered))
 
 #load metadata table (after timeseries dereplication)
 ```{r}
-meta.data<-read.csv("../../data/metadata_timeseries_dereplicated.csv", sep = ',', stringsAsFactors=F)
+meta.data<-read.csv("data/metadata_timeseries_dereplicated.csv", sep = ',', stringsAsFactors=F)
 rownames(meta.data) <- as.character(meta.data$Samples)
 ```
 
@@ -56,7 +56,7 @@ source("external_scripts/alpha_diversity.R")
 source("external_scripts/rarefaction.R")
 
 #get as R object the alpha diversity results of already computed. 
-filename <- "../../data/alpha_diversity/HillDiv_counts_withMetadata.rds"
+filename <- "data/alpha_diversity/HillDiv_counts_withMetadata.rds"
 
 if (file.exists(filename)) {
   alpha.frame.m <- readRDS(file = filename)
@@ -195,7 +195,7 @@ pCDI_cdiff<- ggplot(data = all_merged.alpha.frame.m, mapping = aes(x = group, y 
 pCDI_cdiff <- pCDI_cdiff + stat_compare_means(comparisons = my_comparisons, label = "p.signif", method = "wilcox.test") 
 
 #plot
-pdf(file="../../figures/CDI/CDI_richness.pdf", width=5, height=5)
+pdf(file="figures/CDI/CDI_richness.pdf", width=5, height=5)
 grid.arrange(pCDI_cdiff, ncol = 1)
 dev.off()
 ```
