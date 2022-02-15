@@ -24,61 +24,78 @@ In order to avoid under- or over-estimating *C. difficile* prevalence, only one 
 #### 1. *C. difficile* and other antibiotic-associated diarrhea (AAD) species analysis
 Here we investigate prevalence and relative abundance of *C. difficile*, as well as other bacterial species known to cause CDI-like symptomatology. We also look at the species richness in CDI patients.
 
-`bin/Rmarkdown src/CDI_analysis/CDI_analysis.Rmd figures/CDI_analysis/CDI_analysis.html`  
-`bin/Rmarkdown src/CDI_analysis/CDI_richness.Rmd figures/CDI_analysis/CDI_richness.html`
+```bash
+bin/Rmarkdown src/CDI_analysis/CDI_analysis.Rmd figures/CDI_analysis/CDI_analysis.html
+bin/Rmarkdown src/CDI_analysis/CDI_richness.Rmd figures/CDI_analysis/CDI_richness.html
+```
 
 #### 2. LASSO model
 To identify the microbial signature associated with CDI we trained a series of LASSO-regularised logistic regression models in a leave-one-study-out validation approach.
 
-`Rscript src/LASSO/custom_data_split.R`  
-`bin/Rmarkdown src/LASSO/lasso_modelling.Rmd figures/LASSO/lasso_modelling.html`  
-`bin/Rmarkdown src/LASSO/lasso_auc.Rmd figures/LASSO/lasso_auc.html`  
+```bash
+Rscript src/LASSO/custom_data_split.R
+bin/Rmarkdown src/LASSO/lasso_modelling.Rmd figures/LASSO/lasso_modelling.html
+bin/Rmarkdown src/LASSO/lasso_auc.Rmd figures/LASSO/lasso_auc.html
+```
 
 #### 3. Linear mixed effect and ANOVA
 We then used linear mixed effect model analysis to identify the species significantly enriched or depleted in terms of relative abundance in CDI compared to diseased and healthy controls.
 
-`bin/Rmarkdown src/CDI_analysis/src_rem_testing.Rmd figures/CDI_analysis/src_rem_testing.html`  
-`Rscript src/CDI_analysis/volcano_plot.R`   
-`bin/Rmarkdown src/ANOVA/anova.Rmd figures/ANOVA/anova.html`
+```bash
+bin/Rmarkdown src/CDI_analysis/src_rem_testing.Rmd figures/CDI_analysis/src_rem_testing.html  
+Rscript src/CDI_analysis/volcano_plot.R   
+bin/Rmarkdown src/ANOVA/anova.Rmd figures/ANOVA/anova.html
+```
 
 ### Analyses on global datasets
 
 #### 4. *C. difficile* prevalence 
 Here we track *C. difficile* prevalence over lifetime, across geographical locations, in healthy as well as in diseased subjects. We also investigated *C. difficile* carriage in different host species.
 
-`bin/Rmarkdown src/prevalence/prevalence.Rmd figures/prevalence/prevalence.html`
+```bash
+bin/Rmarkdown src/prevalence/prevalence.Rmd figures/prevalence/prevalence.html
+```
 
 #### 5. Alpha diversity 
 As shown by the results in point 1. (and previous studies in the literature), *C. difficile* in CDI is associated with significant reduction in the gut microbiome species richness. To assess if this holds true also outside of the CDI context, we looked at species richness and evenness in both healthy and diseased subjects of all ages (0-107 yrs). 
 
-`bin/Rmarkdown src/alpha_diversity/community_analysis.Rmd figures/alpha_diversity/community_analysis.html`
+```bash
+bin/Rmarkdown src/alpha_diversity/community_analysis.Rmd figures/alpha_diversity/community_analysis.html
+```
 
 #### 6. Species co-occurrence with *C. difficile* 
 As *C. difficile* prevalence and associated community richness differ by age group and health status, we used Fisher's exact test to identify the species co-occurring with *C. difficile* in a significant manner in each age/status category.    
 
-`bin/Rmarkdown src/co_occurrence/FisherTest_coOccurrence.Rmd figures/co_occurrence/FisherTest_coOccurrence.html`  
-`bin/Rmarkdown src/co_occurrence/parsing_plotting.Rmd figures/co_occurrence/parsing_plotting.html`
+```bash
+bin/Rmarkdown src/co_occurrence/FisherTest_coOccurrence.Rmd figures/co_occurrence/FisherTest_coOccurrence.html
+bin/Rmarkdown src/co_occurrence/parsing_plotting.Rmd figures/co_occurrence/parsing_plotting.html
+```
 
 #### 7. *C. difficile* appearance in timeseries 
 Here we leveraged the available longitudinal data to investigate when *C. difficile* appears for the first time in infancy and early childhood. As using the dereplicated sample set would defy the purpose of this analysis, here we used the full set of samples available from mother-infant couples.
 
-`bin/Rmarkdown src/timeseries_appearance/timeseries_appearance.Rmd figures/timeseries_appearance/timeseries_appearance.html`
+```bash
+bin/Rmarkdown src/timeseries_appearance/timeseries_appearance.Rmd figures/timeseries_appearance/timeseries_appearance.html
+```
 
 #### 8. Mother-infant microbial similarity
 Here we calculated beta diversity (Bray-Curtis index) to identify community similarity between infant-mother pairs, divided by *C. difficile* presence.  
 
-`bin/Rmarkdown src/Bray_Curtis/Bray_Curtis_Cdiff.Rmd figures/Bray_Curtis/Bray_Curtis_Cdiff.html`
+```bash
+bin/Rmarkdown src/Bray_Curtis/Bray_Curtis_Cdiff.Rmd figures/Bray_Curtis/Bray_Curtis_Cdiff.html
+```
 
 
-####Session Info
+#### Session Info
 
-`other attached packages:
+```
+other attached packages:
  [1] colorRamps_2.3       RColorBrewer_1.1-2   ComplexHeatmap_2.1.2 dendextend_1.14.0    gplots_3.0.1.2       reshape2_1.4.3       ggdendro_0.1-20      cowplot_1.0.0        SIAMCAT_1.2.1        phyloseq_1.26.1     
 [11] mlr_2.17.0           ParamHelpers_1.13    rsq_2.0              broom_0.7.12         margins_0.3.23       car_3.0-6            carData_3.0-3        vegan_2.5-6          lattice_0.20-38      permute_0.9-5       
 [21] forcats_0.5.1        stringr_1.4.0        purrr_0.3.4          readr_2.1.2          tidyr_1.1.4          tibble_3.1.6         tidyverse_1.3.1      rstatix_0.6.0        gridExtra_2.3        ggrepel_0.8.1       
-[31] dplyr_1.0.7          ggpubr_0.2.5         magrittr_2.0.2       ggplot2_3.3.5`       
+[31] dplyr_1.0.7          ggpubr_0.2.5         magrittr_2.0.2       ggplot2_3.3.5       
 
-`loaded via a namespace (and not attached):
+loaded via a namespace (and not attached):
   [1] circlize_0.4.8      readxl_1.3.1        backports_1.1.5     fastmatch_1.1-0     corrplot_0.84       plyr_1.8.5          igraph_1.2.4.2      splines_3.5.1       gridBase_0.4-7      foreach_1.4.7      
  [11] viridis_0.5.1       gdata_2.18.0        fansi_0.4.1         checkmate_1.9.4     BBmisc_1.11         cluster_2.1.0       tzdb_0.2.0          openxlsx_4.1.4      Biostrings_2.50.2   modelr_0.1.8       
  [21] matrixStats_0.56.0  colorspace_1.4-1    rvest_1.0.2         haven_2.3.1         xfun_0.12           crayon_1.4.2        jsonlite_1.7.3      lme4_1.1-21         survival_3.1-8      iterators_1.0.12   
@@ -90,4 +107,5 @@ Here we calculated beta diversity (Bray-Curtis index) to identify community simi
  [81] nloptr_1.2.1        multtest_2.38.0     vctrs_0.3.8         pillar_1.6.5        lifecycle_1.0.1     GlobalOptions_0.1.1 LiblineaR_2.10-8    data.table_1.14.2   bitops_1.0-6        R6_2.4.1           
  [91] KernSmooth_2.23-16  rio_0.5.16          IRanges_2.16.0      codetools_0.2-16    boot_1.3-24         MASS_7.3-51.5       gtools_3.8.1        assertthat_0.2.1    rhdf5_2.26.2        rjson_0.2.20       
 [101] withr_2.4.3         S4Vectors_0.20.1    mgcv_1.8-31         parallel_3.5.1      hms_1.1.1           minqa_1.2.4         parallelMap_1.5.0   pROC_1.16.2         numDeriv_2016.8-1.1 Biobase_2.42.0     
-[111] lubridate_1.8.0`    
+[111] lubridate_1.8.0
+```    
