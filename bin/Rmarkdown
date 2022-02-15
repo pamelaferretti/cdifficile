@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+if [ "2" -gt "$#" ]; then
+  echo "Usage: $0 script.Rmd path/to/output.html arg1=\'value1\' arg2=\'value2\' ..."
+  exit 1
+fi
+
+function commas() { local IFS=","; echo "$*"; }
+
+FILE="$1"
+shift
+OUTNAME="$(basename "$1")"
+OUTDIR="$(dirname "$1")"
+shift
+
+echo "Running: R -e \"rmarkdown::render('$FILE',output_format='html_document',output_dir='${OUTDIR}',output_file='${OUTNAME}',params=list($(commas "$@")))\""
+R -e "rmarkdown::render('$FILE',output_format='html_document',output_dir='${OUTDIR}',output_file='${OUTNAME}',params=list($(commas "$@")))"
