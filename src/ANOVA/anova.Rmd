@@ -366,3 +366,39 @@ metadata_file <- metadata_file %>%
 fit <- lmer(total_MG_coverage~Cdiff+(1|Study), data=metadata_file)
 summary(fit)
 ```
+
+#LME cdiff proportion (suppl. figure 4B)
+```{r}
+library("tidyverse")
+library("lmerTest")
+
+temp <- read_csv('data/metadata_timeseries_dereplicated.csv') %>% 
+  filter(final_representative=='Yes') %>% 
+  filter(!is.na(total_MG_coverage)) %>% 
+  mutate(quant=ntile(total_MG_coverage, n = 10)) 
+
+fit <- lmer(as.numeric(as.factor(Cdiff))~quant+(1|Study), data=temp)
+summary(fit)
+# Fixed effects:
+# Estimate Std. Error         df t value Pr(>|t|)    
+# (Intercept)  1.072e+00  1.057e-02  3.465e+02 101.464   <2e-16 ***
+# quant       -3.682e-04  7.639e-04  2.302e+04  -0.482     0.63 
+
+g <- temp %>% 
+  group_by(quant, Cdiff) %>% 
+  tally() %>% 
+  mutate(n.all=sum(n)) %>% 
+  mutate(prop=n/n.all) %>% 
+  ggplot(aes(x=as.factor(quant), y=prop, fill=Cdiff)) + 
+  geom_bar(stat='identity') + 
+  scale_fill_manual(values=c('#A8A99E', '#D41645'), guide='none') + 
+  xlab('Coverage quantile') +
+  ylab('Proportion') +
+  theme_bw() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+        panel.grid = element_blank()) + 
+  NULL
+ggsave(g, filename = 'figures/ANOVA/Cdiff_proportion_all.pdf', width = 5, height = 3)
+
+```
+
