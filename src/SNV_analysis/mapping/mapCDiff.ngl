@@ -1,0 +1,25 @@
+ngless "1.1" #"0.7"
+import "parallel" version "0.6"
+import "mocat" version "0.0"
+import "samtools" version "0.0"
+
+samples = readlines(ARGV[2])
+sample = lock1(samples)
+input = load_mocat_sample(ARGV[1] + '/' + sample )
+
+#fastaTarget="/g/scb2/bork/rossum/cDiff/subspecies/mapping/fr11_targetSpecI.fna"
+#fastaGenus="/g/scb2/bork/rossum/cDiff/subspecies/mapping/fr11_genusClostridioides.fna"
+
+fastaTarget="/scratch/rossum/cdiff/mapping/fr11_targetSpecI.fna"
+fastaGenus="/scratch/rossum/cdiff/mapping/fr11_genusClostridioides.fna"
+
+mapped = map(input, fafile= fastaGenus, mode_all=True)
+mapped = select(mapped) using |mr|:
+    mr = mr.filter(min_match_size=45, min_identity_pc=97, action={unmatch})
+
+mapped_unique = select(mapped, keep_if=[{mapped}, {unique}])
+mapped_unique = samtools_sort(mapped_unique)
+write(mapped_unique, ofile='outputs/' + sample + '.cdiffGenus.unique.sorted.bam')
+
+collect(qcstats({fastq}), ofile='cdiffGenus_fqstats.txt', current=sample, allneeded=samples)
+collect(qcstats({mapping}), ofile='cdiffGenus_mapstats.txt', current=sample, allneeded=samples)
